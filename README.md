@@ -38,10 +38,17 @@ LinkedIn AI Comment Copilot is a full-stack application consisting of a **Chrome
 
 ---
 
+## Demo
 
 <div align="center">
-  <img src="https://www.youtube.com/watch?v=kjruA8Rzmbw" />
+  <a href="https://www.youtube.com/watch?v=kjruA8Rzmbw" target="_blank">
+    <img src="https://img.youtube.com/vi/kjruA8Rzmbw/maxresdefault.jpg" alt="LinkedIn AI Comment Copilot Demo" width="100%" style="max-width: 800px; border-radius: 8px;">
+  </a>
+  
+  **Click the image above to watch the demo on YouTube**
 </div>
+
+---
 
 ## Features
 
