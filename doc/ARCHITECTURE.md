@@ -52,7 +52,7 @@ graph LR
     style LS fill:#6C47FF,color:#fff
 ```
 <div align="center">
-  <img src="assets/System Overview.png" alt="System Overview" />
+  <img src="../assets/System Overview.png" alt="System Overview" />
 </div>
 ---
 
@@ -101,7 +101,7 @@ graph TB
     RV --> GROQLLAMA
 ```
 <div align="center">
-  <img src="assets/High-Level Architecture.png" alt="High-Level Architecture" />
+  <img src="../assets/High-Level Architecture.png" alt="High-Level Architecture" />
 </div>
 ---
 
@@ -163,7 +163,7 @@ classDiagram
 ```
 
 <div align="center">
-  <img src="assets/component diagram.png" alt="Component Diagram" />
+  <img src="../assets/component diagram.png" alt="Component Diagram" />
 </div>
 ---
 
@@ -271,7 +271,7 @@ graph TD
     LLM --> ROUTER
 ```
 <div align="center">
-  <img src="assets/Module Structure.png" alt="Module Structure" />
+  <img src="../assets/Module Structure.png" alt="Module Structure" />
 </div>
 ---
 ### Error Handling Flow
@@ -293,7 +293,7 @@ graph TD
     style HTTP fill:#F44336,color:#fff
 ```
 <div align="center">
-  <img src="assets/Error Handling Flow.png" alt="Error Handling Flow" />
+  <img src="../assets/Error Handling Flow.png" alt="Error Handling Flow" />
 </div>
 ---
 
@@ -329,7 +329,7 @@ graph TD
     CARD -->|"Insert Comment"| INPUT
 ```
 <div align="center">
-  <img src="assets/Chrome Extension Architecture.png" alt="Chrome Extension Architecture" />
+  <img src="../assets/Chrome Extension Architecture.png" alt="Chrome Extension Architecture" />
 </div>
 ---
 
@@ -356,7 +356,7 @@ graph TB
     SERVER -->|"HTTPS"| LS_CLOUD
 ```
 <div align="center">
-  <img src="assets/Network Topology.png" alt="Network Topology" />
+  <img src="../assets/Network Topology.png" alt="Network Topology" />
 </div>
 ---
 
