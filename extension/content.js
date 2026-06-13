@@ -217,6 +217,10 @@
 
   // ─── State ─────────────────────────────────────────────────────────────────
 
+  // Track the CURRENT post being operated on — saved when Generate is clicked,
+  // used when Insert Comment is clicked
+  let currentPostElement = null;
+
   let state = {
     url: window.location.href,
     loggedIn: false,
@@ -234,7 +238,14 @@
 
   const observer = new MutationObserver((mutations) => {
     const hasNewNodes = mutations.some((m) => m.addedNodes.length > 0);
-    if (hasNewNodes) {
+    const hasRemovedButtons = mutations.some((m) => {
+      return Array.from(m.removedNodes).some((node) => {
+        if (node.nodeType !== 1) return false;
+        return node.classList?.contains(BUTTON_CLASS) ||
+               node.querySelector?.(`.${BUTTON_CLASS}`);
+      });
+    });
+    if (hasNewNodes || hasRemovedButtons) {
       debounce(runScan, 800);
     }
   });
@@ -789,17 +800,37 @@
       <span>Generate AI Comment</span>
     `;
     button.title = 'Generate AI comment';
-    button.addEventListener('click', handleButtonClick);
+
+    // Use capturing phase (true) to fire BEFORE LinkedIn's handlers
+    button.addEventListener('click', handleButtonClick, true);
+
+    // Fallback: also listen for pointerdown in case LinkedIn blocks click events
+    button.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      // Manually fire the click handler
+      handleButtonClick(e);
+    }, true);
+
     return button;
   }
 
   // ─── Click Handler ─────────────────────────────────────────────────────────
 
   function handleButtonClick(e) {
-    e.preventDefault();
-    e.stopPropagation();
+    try {
+      e.preventDefault();
+      e.stopPropagation();
+    } catch (_) {
+      // Event may already be prevented — continue
+    }
 
-    const button = e.currentTarget;
+    const button = e.currentTarget || e.target?.closest?.(`.${BUTTON_CLASS}`);
+    if (!button) {
+      logError('handleButtonClick: could not find button element');
+      return;
+    }
+
     log('Button clicked!');
 
     // Find post container — try multiple strategies
@@ -828,6 +859,9 @@
     }
 
     log('Found post container:', post.tagName, post.className?.substring(0, 50));
+
+    // SAVE the post reference so Insert Comment knows which post to target
+    currentPostElement = post;
 
     const content = extractContent(post);
 
@@ -1295,7 +1329,8 @@
 
     // Insert button — opens LinkedIn comment box and pastes
     card.querySelector('#ai-comment-insert').addEventListener('click', () => {
-      insertCommentIntoLinkedIn(comment);
+      // Use the saved post reference from when Generate was clicked
+      insertCommentIntoLinkedIn(comment, currentPostElement);
       const insertBtn = card.querySelector('#ai-comment-insert');
       insertBtn.textContent = 'Inserted!';
       setTimeout(() => {
@@ -1323,66 +1358,87 @@
   /**
    * Insert comment into LinkedIn's comment box.
    * Uses polling to wait for the comment box to appear after clicking.
+   * @param {string} comment - The comment text to insert
+   * @param {Element|null} postElement - The specific post to insert into (scoped)
    */
-  function insertCommentIntoLinkedIn(comment) {
+  function insertCommentIntoLinkedIn(comment, postElement) {
     // Step 1: Find and click the Comment button to open the comment box
-    const commentTriggers = Array.from(document.querySelectorAll('button'));
-    const commentBtn = commentTriggers.find(btn => {
-      const text = (btn.textContent || '').toLowerCase().trim();
-      const label = (btn.getAttribute('aria-label') || '').toLowerCase();
-      return text === 'comment' || label === 'comment' || 
-             text.includes('comment') && !text.includes('generate');
-    });
+    let commentBtn = null;
 
-    if (commentBtn) {
-      commentBtn.click();
-      showNotification('Opening comment box...', 'info');
-    } else {
+    if (postElement) {
+      // Find the Comment button WITHIN this specific post
+      const buttons = postElement.querySelectorAll('button');
+      commentBtn = Array.from(buttons).find(btn => {
+        const text = (btn.textContent || '').toLowerCase().trim();
+        const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+        return (text === 'comment' || label === 'comment' ||
+               (text.includes('comment') && !text.includes('generate'))) &&
+               !btn.classList.contains(BUTTON_CLASS);
+      });
+    }
+
+    // Fallback: find on the whole page if scoped search failed
+    if (!commentBtn) {
+      const commentTriggers = Array.from(document.querySelectorAll('button'));
+      commentBtn = commentTriggers.find(btn => {
+        const text = (btn.textContent || '').toLowerCase().trim();
+        const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+        return (text === 'comment' || label === 'comment' ||
+               (text.includes('comment') && !text.includes('generate'))) &&
+               !btn.classList.contains(BUTTON_CLASS);
+      });
+    }
+
+    if (!commentBtn) {
       showNotification('Click the Comment button first, then try Insert', 'error');
       return;
     }
 
-    // Step 2: Poll for the comment box to appear (LinkedIn loads it dynamically)
+    // SNAPSHOT: Record all existing comment boxes BEFORE clicking
+    const existingBoxes = new Set(
+      document.querySelectorAll('[contenteditable="true"]')
+    );
+
+    commentBtn.click();
+    showNotification('Opening comment box...', 'info');
+
+    // Step 2: Poll for the NEWLY OPENED comment box
     let attempts = 0;
     const maxAttempts = 20; // 2 seconds total
+
+    const commentBoxSelectors = [
+      '.ql-editor[contenteditable="true"]',
+      '[contenteditable="true"][data-placeholder*="comment" i]',
+      '[contenteditable="true"][aria-placeholder*="comment" i]',
+      '.comments-comment-box__form [contenteditable="true"]',
+      '.comment-form [contenteditable="true"]',
+      '[contenteditable="true"][role="textbox"]',
+      '[contenteditable="true"]:not([style*="display: none"])',
+    ];
 
     const pollForCommentBox = setInterval(() => {
       attempts++;
 
-      // LinkedIn 2025-2026 comment box selectors (in order of priority)
-      const commentBoxSelectors = [
-        // Quill editor (LinkedIn's rich text editor)
-        '.ql-editor[contenteditable="true"]',
-        // Generic contenteditable with comment placeholder
-        '[contenteditable="true"][data-placeholder*="comment" i]',
-        '[contenteditable="true"][aria-placeholder*="comment" i]',
-        // LinkedIn's comment box wrapper
-        '.comments-comment-box__form [contenteditable="true"]',
-        '.comment-form [contenteditable="true"]',
-        // Any contenteditable textbox
-        '[contenteditable="true"][role="textbox"]',
-        // Last resort: any visible contenteditable
-        '[contenteditable="true"]:not([style*="display: none"])',
-      ];
-
       for (const sel of commentBoxSelectors) {
         const boxes = document.querySelectorAll(sel);
         for (const box of boxes) {
+          // SKIP boxes that already existed before we clicked Comment
+          if (existingBoxes.has(box)) continue;
+
           // Make sure the box is visible and large enough
           const rect = box.getBoundingClientRect();
           if (rect.width < 50 || rect.height < 20) continue;
 
-          // Make sure it's not our own button or notification
+          // Make sure it's not our own UI
           if (box.closest('.ai-comment-card') || box.closest('.ai-comment-notification')) continue;
 
-          // Found a valid comment box!
+          // Found the NEW comment box!
           clearInterval(pollForCommentBox);
 
           // Focus and insert text
           box.focus();
           box.click();
 
-          // Use multiple insertion methods for compatibility
           // Method 1: execCommand (works with Quill)
           document.execCommand('selectAll', false, null);
           document.execCommand('insertText', false, comment);
@@ -1397,7 +1453,7 @@
             box.innerHTML = comment;
           }
 
-          // Trigger input event to notify LinkedIn's React state
+          // Trigger input events for LinkedIn's React state
           box.dispatchEvent(new Event('input', { bubbles: true }));
           box.dispatchEvent(new Event('change', { bubbles: true }));
           box.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
