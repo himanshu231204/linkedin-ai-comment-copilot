@@ -163,7 +163,7 @@ classDiagram
 ```
 
 <div align="center">
-  <img src="../assets/component diagram.png" alt="Component Diagram" />
+  <img src="../assets/component_diagram.png" alt="component_diagram" />
 </div>
 ---
 
