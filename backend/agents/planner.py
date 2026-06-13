@@ -1,8 +1,13 @@
 from typing import Dict, Any
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.runnables import Runnable
-from ..prompts.planner_prompt import planner_prompt
-from ..models.llm import create_llm, get_default_llm_config
+
+try:
+    from ..prompts.planner_prompt import planner_prompt
+    from ..models.llm import create_llm, get_default_llm_config
+except ImportError:
+    from prompts.planner_prompt import planner_prompt
+    from models.llm import create_llm, get_default_llm_config
 
 
 def create_planner_agent(llm_config=None) -> Runnable:

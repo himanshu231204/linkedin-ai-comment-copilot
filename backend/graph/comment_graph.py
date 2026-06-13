@@ -1,15 +1,28 @@
 from typing import TypedDict, Literal
 from langgraph.graph import StateGraph, END
-from ..agents.analyzer import analyze_post
-from ..agents.planner import plan_strategy
-from ..agents.writer import write_comment
-from ..agents.reviewer import review_comment
-from ..models.llm import (
-    get_analyzer_llm_config,
-    get_planner_llm_config,
-    get_writer_llm_config,
-    get_reviewer_llm_config,
-)
+
+try:
+    from ..agents.analyzer import analyze_post
+    from ..agents.planner import plan_strategy
+    from ..agents.writer import write_comment
+    from ..agents.reviewer import review_comment
+    from ..models.llm import (
+        get_analyzer_llm_config,
+        get_planner_llm_config,
+        get_writer_llm_config,
+        get_reviewer_llm_config,
+    )
+except ImportError:
+    from agents.analyzer import analyze_post
+    from agents.planner import plan_strategy
+    from agents.writer import write_comment
+    from agents.reviewer import review_comment
+    from models.llm import (
+        get_analyzer_llm_config,
+        get_planner_llm_config,
+        get_writer_llm_config,
+        get_reviewer_llm_config,
+    )
 
 
 class CommentState(TypedDict):

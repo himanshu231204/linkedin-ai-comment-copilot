@@ -4,9 +4,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-from .schemas.request import GenerateCommentRequest
-from .schemas.response import GenerateCommentResponse, HealthResponse
-from .graph.comment_graph import comment_graph, CommentState
+try:
+    from .schemas.request import GenerateCommentRequest
+    from .schemas.response import GenerateCommentResponse, HealthResponse
+    from .graph.comment_graph import comment_graph, CommentState
+except ImportError:
+    from schemas.request import GenerateCommentRequest
+    from schemas.response import GenerateCommentResponse, HealthResponse
+    from graph.comment_graph import comment_graph, CommentState
 
 
 load_dotenv()

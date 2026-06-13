@@ -1,8 +1,13 @@
 from typing import Dict, Any
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.runnables import Runnable
-from ..prompts.analyzer_prompt import analyzer_prompt
-from ..models.llm import create_llm, get_default_llm_config
+
+try:
+    from ..prompts.analyzer_prompt import analyzer_prompt
+    from ..models.llm import create_llm, get_default_llm_config
+except ImportError:
+    from prompts.analyzer_prompt import analyzer_prompt
+    from models.llm import create_llm, get_default_llm_config
 
 
 def create_analyzer_agent(llm_config=None) -> Runnable:

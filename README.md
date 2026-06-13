@@ -484,15 +484,19 @@ The backend is pre-configured to accept requests from:
 ### Backend Development
 
 ```bash
+# Option 1 — Run from the backend directory:
 cd backend
-
-# Run with auto-reload
 uvicorn main:app --reload
+
+# Option 2 — Run from the project root:
+uvicorn backend.main:app --reload
 
 # API docs available at
 # http://localhost:8000/docs (Swagger UI)
 # http://localhost:8000/redoc (ReDoc)
 ```
+
+> **Note:** Both run options work. All Python modules use dual imports (`try/except`) so they work whether imported as a package (`backend.main`) or run directly (`main` from inside `backend/`).
 
 ### Extension Development
 
