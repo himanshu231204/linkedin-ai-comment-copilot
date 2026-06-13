@@ -4,6 +4,10 @@
 
 ### AI-Powered Chrome Extension for Intelligent LinkedIn Engagement
 
+<div align="center">
+  <img src="assets/banner.png" alt="LinkedIn AI Comment Copilot Banner" />
+</div>
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-green.svg)](https://python.org)
 [![LangGraph](https://img.shields.io/badge/LangGraph-Multi--Agent-orange.svg)](https://langchain-ai.github.io/langgraph/)
@@ -85,6 +89,10 @@ graph TD
     style J fill:#F55036,color:#fff
     style LS fill:#6C47FF,color:#fff
 ```
+
+<div align="center">
+  <img src="assets/system design.png" alt="System Design" />
+</div>
 
 ### Message Flow (Extension)
 
