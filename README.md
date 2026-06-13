@@ -117,6 +117,9 @@ sequenceDiagram
     Card->>CS: insertCommentIntoLinkedIn(comment)
     CS->>CS: Poll for comment box, insert text
 ```
+<div align="center">
+  <img src="assets/messageflow.png" alt="Messageflow" />
+</div>
 
 ### Project Structure
 
@@ -465,6 +468,10 @@ sequenceDiagram
 
 View traces at: https://smith.langchain.com
 
+
+<div align="center">
+  <img src="assets/langsmith observability.png" alt="LangSmith Observability" />
+</div>
 ---
 
 ## Configuration
