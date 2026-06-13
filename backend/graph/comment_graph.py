@@ -4,7 +4,12 @@ from ..agents.analyzer import analyze_post
 from ..agents.planner import plan_strategy
 from ..agents.writer import write_comment
 from ..agents.reviewer import review_comment
-from ..models.model_router import select_model_config
+from ..models.llm import (
+    get_analyzer_llm_config,
+    get_planner_llm_config,
+    get_writer_llm_config,
+    get_reviewer_llm_config,
+)
 
 
 class CommentState(TypedDict):
@@ -22,8 +27,8 @@ class CommentState(TypedDict):
 
 
 async def analyzer_node(state: CommentState) -> CommentState:
-    """Analyze the LinkedIn post."""
-    llm_config = select_model_config(state["post_content"])
+    """Analyze the LinkedIn post (Gemini 2.5 Flash)."""
+    llm_config = get_analyzer_llm_config()
     result = await analyze_post(state["post_content"], llm_config)
 
     return {
@@ -36,8 +41,8 @@ async def analyzer_node(state: CommentState) -> CommentState:
 
 
 async def planner_node(state: CommentState) -> CommentState:
-    """Plan the comment strategy."""
-    llm_config = select_model_config(state["post_content"])
+    """Plan the comment strategy (Gemini 2.5 Flash)."""
+    llm_config = get_planner_llm_config()
     result = await plan_strategy(
         state["post_type"],
         state["category"],
@@ -53,8 +58,8 @@ async def planner_node(state: CommentState) -> CommentState:
 
 
 async def writer_node(state: CommentState) -> CommentState:
-    """Write the comment."""
-    llm_config = select_model_config(state["post_content"])
+    """Write the comment (Llama 3.3 70B Versatile via Groq)."""
+    llm_config = get_writer_llm_config()
     comment = await write_comment(
         state["post_content"],
         state["tone"],
@@ -70,8 +75,8 @@ async def writer_node(state: CommentState) -> CommentState:
 
 
 async def reviewer_node(state: CommentState) -> CommentState:
-    """Review the generated comment."""
-    llm_config = select_model_config(state["post_content"])
+    """Review the generated comment (Llama 3.3 70B Versatile via Groq)."""
+    llm_config = get_reviewer_llm_config()
     result = await review_comment(
         state["post_content"],
         state["generated_comment"],

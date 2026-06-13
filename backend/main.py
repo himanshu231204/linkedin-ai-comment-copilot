@@ -12,12 +12,33 @@ from .graph.comment_graph import comment_graph, CommentState
 load_dotenv()
 
 
+def configure_langsmith():
+    """Configure LangSmith tracing for LangChain/LangGraph."""
+    langsmith_api_key = os.getenv("LANGCHAIN_API_KEY")
+    if langsmith_api_key:
+        os.environ["LANGCHAIN_TRACING_V2"] = "true"
+        os.environ["LANGCHAIN_API_KEY"] = langsmith_api_key
+        os.environ["LANGCHAIN_ENDPOINT"] = os.getenv(
+            "LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com"
+        )
+        os.environ["LANGCHAIN_PROJECT"] = os.getenv(
+            "LANGCHAIN_PROJECT", "linkedin-ai-comment-copilot"
+        )
+        print(f"LangSmith tracing enabled for project: {os.environ['LANGCHAIN_PROJECT']}")
+    else:
+        print("WARNING: LANGCHAIN_API_KEY not set - LangSmith tracing disabled")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     # Startup
-    if not os.getenv("XAI_API_KEY"):
-        print("WARNING: XAI_API_KEY not set in environment")
+    configure_langsmith()
+
+    if not os.getenv("GOOGLE_API_KEY"):
+        print("WARNING: GOOGLE_API_KEY not set in environment")
+    if not os.getenv("GROQ_API_KEY"):
+        print("WARNING: GROQ_API_KEY not set in environment")
     yield
     # Shutdown (if needed)
 

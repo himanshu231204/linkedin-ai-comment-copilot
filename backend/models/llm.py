@@ -8,20 +8,18 @@ from langchain_core.outputs import LLMResult
 
 
 class LLMConfig(BaseModel):
-    """Configuration for LLM models via xAI Grok (using LiteLLM)."""
+    """Configuration for LLM models (using LiteLLM)."""
 
     model_name: str = Field(..., description="Model identifier (format: provider/model)")
     temperature: float = Field(default=0.7, ge=0.0, le=2.0, description="Sampling temperature")
     max_tokens: int = Field(default=500, ge=1, le=4000, description="Maximum tokens in response")
-    api_key: str = Field(..., description="xAI API key")
-    base_url: str = Field(default="https://api.x.ai/v1", description="xAI API base URL")
-    # xAI-specific options
+    api_key: str = Field(..., description="API key for the provider")
+    base_url: Optional[str] = Field(default=None, description="API base URL (if not using default)")
     source_domain: Optional[str] = Field(default=None, description="X-Source header for domain identification")
     session_id: Optional[str] = Field(default=None, description="Session ID for conversation tracking")
     enable_reasoning: bool = Field(default=False, description="Enable reasoning for supported models")
     reasoning_effort: Optional[str] = Field(default=None, description="Reasoning effort level (low, medium, high)")
-    # LiteLLM specific
-    custom_llm_provider: str = Field(default="openai", description="LiteLLM provider name")
+    custom_llm_provider: Optional[str] = Field(default=None, description="LiteLLM provider name (auto-detected if None)")
 
 
 class LLMCallbackHandler(BaseCallbackHandler):
@@ -49,107 +47,115 @@ class LLMCallbackHandler(BaseCallbackHandler):
 
 
 def create_llm(config: LLMConfig, callbacks: Optional[List[BaseCallbackHandler]] = None) -> ChatLiteLLM:
-    """Create a ChatLiteLLM instance configured for xAI Grok API."""
-    # Build default headers for xAI API
+    """Create a ChatLiteLLM instance based on config."""
+    # Build default headers
     default_headers = {}
     if config.source_domain:
         default_headers["X-Source"] = config.source_domain
     if config.session_id:
         default_headers["X-Session-ID"] = config.session_id
 
-    # Model kwargs for xAI-specific features
+    # Model kwargs for reasoning features
     model_kwargs = {}
     if config.enable_reasoning:
         model_kwargs["reasoning"] = {"effort": config.reasoning_effort or "medium"}
 
-    # LiteLLM uses the format: "provider/model" or just "model" with custom_llm_provider
-    # For xAI Grok, we use the OpenAI-compatible endpoint
-    model = config.model_name
-    if "/" in model and not model.startswith("openai/"):
-        # Convert provider/model to litellm format
-        provider, model_name = model.split("/", 1)
-        model = f"{provider}/{model_name}"
+    # Build kwargs for ChatLiteLLM
+    kwargs = {
+        "model": config.model_name,
+        "temperature": config.temperature,
+        "max_tokens": config.max_tokens,
+        "api_key": config.api_key,
+    }
 
-    return ChatLiteLLM(
-        model=model,
-        temperature=config.temperature,
-        max_tokens=config.max_tokens,
-        api_key=config.api_key,
-        api_base=config.base_url,
-        custom_llm_provider=config.custom_llm_provider,
-        default_headers=default_headers if default_headers else None,
-        model_kwargs=model_kwargs if model_kwargs else None,
-        callbacks=callbacks,
+    # Add base_url only if provided (some providers use default)
+    if config.base_url:
+        kwargs["api_base"] = config.base_url
+
+    # Add custom_llm_provider only if specified
+    if config.custom_llm_provider:
+        kwargs["custom_llm_provider"] = config.custom_llm_provider
+
+    # Add optional headers
+    if default_headers:
+        kwargs["default_headers"] = default_headers
+
+    # Add model kwargs if any
+    if model_kwargs:
+        kwargs["model_kwargs"] = model_kwargs
+
+    # Add callbacks
+    if callbacks:
+        kwargs["callbacks"] = callbacks
+
+    return ChatLiteLLM(**kwargs)
+
+
+def get_analyzer_llm_config(source_domain: Optional[str] = None) -> LLMConfig:
+    """Get LLM configuration for Analyzer agent (Gemini 2.5 Flash)."""
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise ValueError("GOOGLE_API_KEY environment variable is required")
+
+    return LLMConfig(
+        model_name="gemini/gemini-2.5-flash",
+        temperature=0.3,
+        max_tokens=200,
+        api_key=api_key,
+        source_domain=source_domain,
+    )
+
+
+def get_planner_llm_config(source_domain: Optional[str] = None) -> LLMConfig:
+    """Get LLM configuration for Planner agent (Gemini 2.5 Flash)."""
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise ValueError("GOOGLE_API_KEY environment variable is required")
+
+    return LLMConfig(
+        model_name="gemini/gemini-2.5-flash",
+        temperature=0.5,
+        max_tokens=200,
+        api_key=api_key,
+        source_domain=source_domain,
+    )
+
+
+def get_writer_llm_config(source_domain: Optional[str] = None) -> LLMConfig:
+    """Get LLM configuration for Writer agent (Llama 3.3 70B Versatile via Groq)."""
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise ValueError("GROQ_API_KEY environment variable is required")
+
+    return LLMConfig(
+        model_name="groq/llama-3.3-70b-versatile",
+        temperature=0.7,
+        max_tokens=500,
+        api_key=api_key,
+        source_domain=source_domain,
+    )
+
+
+def get_reviewer_llm_config(source_domain: Optional[str] = None) -> LLMConfig:
+    """Get LLM configuration for Reviewer agent (Llama 3.3 70B Versatile via Groq)."""
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise ValueError("GROQ_API_KEY environment variable is required")
+
+    return LLMConfig(
+        model_name="groq/llama-3.3-70b-versatile",
+        temperature=0.3,
+        max_tokens=300,
+        api_key=api_key,
+        source_domain=source_domain,
     )
 
 
 def get_default_llm_config(source_domain: Optional[str] = None) -> LLMConfig:
-    """Get default LLM configuration (Grok 3 - fast & capable)."""
-    api_key = os.getenv("XAI_API_KEY")
-    if not api_key:
-        raise ValueError("XAI_API_KEY environment variable is required")
-
-    return LLMConfig(
-        model_name="grok-3",
-        temperature=0.7,
-        max_tokens=500,
-        api_key=api_key,
-        base_url="https://api.x.ai/v1",
-        source_domain=source_domain,
-        custom_llm_provider="openai",
-    )
+    """Get default LLM configuration (Gemini 2.5 Flash)."""
+    return get_analyzer_llm_config(source_domain=source_domain)
 
 
 def get_premium_llm_config(source_domain: Optional[str] = None) -> LLMConfig:
-    """Get premium LLM configuration (Grok 3 with reasoning - highest quality)."""
-    api_key = os.getenv("XAI_API_KEY")
-    if not api_key:
-        raise ValueError("XAI_API_KEY environment variable is required")
-
-    return LLMConfig(
-        model_name="grok-3",
-        temperature=0.7,
-        max_tokens=500,
-        api_key=api_key,
-        base_url="https://api.x.ai/v1",
-        source_domain=source_domain,
-        custom_llm_provider="openai",
-        enable_reasoning=True,
-        reasoning_effort="medium",
-    )
-
-
-def get_technical_llm_config(source_domain: Optional[str] = None) -> LLMConfig:
-    """Get technical LLM configuration (Grok 3 Mini - fast for technical content)."""
-    api_key = os.getenv("XAI_API_KEY")
-    if not api_key:
-        raise ValueError("XAI_API_KEY environment variable is required")
-
-    return LLMConfig(
-        model_name="grok-3-mini",
-        temperature=0.5,
-        max_tokens=500,
-        api_key=api_key,
-        base_url="https://api.x.ai/v1",
-        source_domain=source_domain,
-        custom_llm_provider="openai",
-    )
-
-
-def get_reasoning_llm_config(source_domain: Optional[str] = None) -> LLMConfig:
-    """Get reasoning-enabled LLM configuration (Grok 3 with high reasoning - for complex analysis tasks)."""
-    api_key = os.getenv("XAI_API_KEY")
-    if not api_key:
-        raise ValueError("XAI_API_KEY environment variable is required")
-
-    return LLMConfig(
-        model_name="grok-3",
-        temperature=0.3,
-        max_tokens=1000,
-        api_key=api_key,
-        base_url="https://api.x.ai/v1",
-        source_domain=source_domain,
-        custom_llm_provider="openai",
-        enable_reasoning=True,
-        reasoning_effort="high",
-    )
+    """Get premium LLM configuration (Llama 3.3 70B Versatile via Groq)."""
+    return get_writer_llm_config(source_domain=source_domain)

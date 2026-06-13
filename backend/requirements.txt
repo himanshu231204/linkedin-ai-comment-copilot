@@ -4,6 +4,7 @@ uvicorn
 langchain
 langgraph
 langchain-litellm
+langsmith
 
 litellm
 
