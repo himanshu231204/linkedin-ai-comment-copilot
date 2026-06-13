@@ -1,4 +1,12 @@
 import os
+import sys
+
+# Fix Windows async DNS resolution issue with aiohttp/litellm
+# Must be set before importing any async libraries
+if sys.platform == "win32":
+    import asyncio
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,19 +27,19 @@ load_dotenv()
 
 def configure_langsmith():
     """Configure LangSmith tracing for LangChain/LangGraph."""
-    langsmith_api_key = os.getenv("LANGCHAIN_API_KEY")
+    langsmith_api_key = os.getenv("LANGSMITH_API_KEY")
     if langsmith_api_key:
-        os.environ["LANGCHAIN_TRACING_V2"] = "true"
-        os.environ["LANGCHAIN_API_KEY"] = langsmith_api_key
-        os.environ["LANGCHAIN_ENDPOINT"] = os.getenv(
-            "LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com"
+        os.environ["LANGSMITH_TRACING"] = "true"
+        os.environ["LANGSMITH_API_KEY"] = langsmith_api_key
+        os.environ["LANGSMITH_ENDPOINT"] = os.getenv(
+            "LANGSMITH_ENDPOINT", "https://api.smith.langchain.com"
         )
-        os.environ["LANGCHAIN_PROJECT"] = os.getenv(
-            "LANGCHAIN_PROJECT", "linkedin-ai-comment-copilot"
+        os.environ["LANGSMITH_PROJECT"] = os.getenv(
+            "LANGSMITH_PROJECT", "linkedin-ai-comment-copilot"
         )
-        print(f"LangSmith tracing enabled for project: {os.environ['LANGCHAIN_PROJECT']}")
+        print(f"LangSmith tracing enabled for project: {os.environ['LANGSMITH_PROJECT']}")
     else:
-        print("WARNING: LANGCHAIN_API_KEY not set - LangSmith tracing disabled")
+        print("WARNING: LANGSMITH_API_KEY not set - LangSmith tracing disabled")
 
 
 @asynccontextmanager

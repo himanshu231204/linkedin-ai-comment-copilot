@@ -156,6 +156,11 @@ def get_default_llm_config(source_domain: Optional[str] = None) -> LLMConfig:
     return get_analyzer_llm_config(source_domain=source_domain)
 
 
+def get_fallback_llm_config(source_domain: Optional[str] = None) -> LLMConfig:
+    """Get fallback LLM configuration (Groq Llama 3.3 70B) for when primary provider fails."""
+    return get_writer_llm_config(source_domain=source_domain)
+
+
 def get_premium_llm_config(source_domain: Optional[str] = None) -> LLMConfig:
     """Get premium LLM configuration (Llama 3.3 70B Versatile via Groq)."""
     return get_writer_llm_config(source_domain=source_domain)

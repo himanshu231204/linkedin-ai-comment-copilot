@@ -39,9 +39,9 @@
 
 | Variable | Provider | Default | Description |
 |----------|----------|---------|-------------|
-| `LANGCHAIN_API_KEY` | LangSmith | None | Enables request tracing & observability |
-| `LANGCHAIN_PROJECT` | LangSmith | `linkedin-ai-comment-copilot` | LangSmith project name |
-| `LANGCHAIN_ENDPOINT` | LangSmith | `https://api.smith.langchain.com` | LangSmith API endpoint |
+| `LANGSMITH_API_KEY` | LangSmith | None | Enables request tracing & observability |
+| `LANGSMITH_PROJECT` | LangSmith | `linkedin-ai-comment-copilot` | LangSmith project name |
+| `LANGSMITH_ENDPOINT` | LangSmith | `https://api.smith.langchain.com` | LangSmith API endpoint |
 | `HOST` | Server | `0.0.0.0` | Backend server bind host |
 | `PORT` | Server | `8000` | Backend server bind port |
 
@@ -115,7 +115,7 @@ graph LR
     B --> C["Settings → API Keys"]
     C --> D["Create API Key"]
     D --> E["Copy key"]
-    E --> F["Add to .env<br/>LANGCHAIN_API_KEY=..."]
+    E --> F["Add to .env<br/>LANGSMITH_API_KEY=..."]
 
     style A fill:#6C47FF,color:#fff
     style F fill:#057642,color:#fff
@@ -129,8 +129,8 @@ graph LR
 5. Copy the key
 6. Add to `backend/.env`:
    ```env
-   LANGCHAIN_API_KEY=ls_...your_key_here
-   LANGCHAIN_PROJECT=linkedin-ai-comment-copilot
+   LANGSMITH_API_KEY=ls_...your_key_here
+   LANGSMITH_PROJECT=linkedin-ai-comment-copilot
    ```
 
 ---
@@ -187,9 +187,9 @@ GOOGLE_API_KEY=AIzaSy...your_google_key
 GROQ_API_KEY=gsk_...your_groq_key
 
 # Optional: LangSmith tracing
-LANGCHAIN_API_KEY=ls_...your_langsmith_key
-LANGCHAIN_PROJECT=linkedin-ai-comment-copilot
-# LANGCHAIN_ENDPOINT=https://api.smith.langchain.com
+LANGSMITH_API_KEY=ls_...your_langsmith_key
+LANGSMITH_PROJECT=linkedin-ai-comment-copilot
+# LANGSMITH_ENDPOINT=https://api.smith.langchain.com
 
 # Optional: Server config
 # HOST=0.0.0.0
@@ -271,6 +271,40 @@ curl -X POST http://localhost:8000/generate-comment ^
 ### 4. LangSmith Verification
 
 If LangSmith is configured, visit [smith.langchain.com](https://smith.langchain.com) and select the `linkedin-ai-comment-copilot` project. You should see traces for each API call.
+
+---
+
+## Troubleshooting
+
+### Windows DNS Resolution Issue
+
+**Symptom:** `Cannot connect to host ... Could not contact DNS servers`
+
+**Cause:** The `aiodns` package (used by aiohttp for async DNS) has compatibility issues on Windows.
+
+**Fix:**
+```bash
+pip uninstall aiodns pycares -y
+```
+
+This forces aiohttp to use the system DNS resolver instead.
+
+### LangSmith Warning
+
+**Symptom:** `WARNING: LANGSMITH_API_KEY not set - LangSmith tracing disabled`
+
+**Fix:** Ensure your `.env` uses the new `LANGSMITH_*` variable names (not the deprecated `LANGCHAIN_*` names):
+```env
+LANGSMITH_API_KEY=your_key_here
+LANGSMITH_PROJECT=linkedin-ai-comment-copilot
+```
+
+### API Returns 500 Error
+
+**Check:**
+1. API keys are set in `.env`
+2. Both Google AI and Groq APIs are accessible from your network
+3. Run `python -m backend.test_models` to verify connectivity
 
 ---
 

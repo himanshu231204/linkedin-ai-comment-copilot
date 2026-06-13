@@ -262,8 +262,8 @@ GOOGLE_API_KEY=your_google_api_key_here
 GROQ_API_KEY=your_groq_api_key_here
 
 # Optional — LangSmith tracing
-LANGCHAIN_API_KEY=your_langsmith_api_key_here
-LANGCHAIN_PROJECT=linkedin-ai-comment-copilot
+LANGSMITH_API_KEY=your_langsmith_api_key_here
+LANGSMITH_PROJECT=linkedin-ai-comment-copilot
 ```
 
 ### 4. Test Model Connectivity
@@ -465,8 +465,8 @@ View traces at: https://smith.langchain.com
 |----------|----------|-------------|
 | `GOOGLE_API_KEY` | Yes | Google AI API key (Gemini models) |
 | `GROQ_API_KEY` | Yes | Groq API key (Llama 3.3 models) |
-| `LANGCHAIN_API_KEY` | No | LangSmith API key for tracing |
-| `LANGCHAIN_PROJECT` | No | LangSmith project name (default: `linkedin-ai-comment-copilot`) |
+| `LANGSMITH_API_KEY` | No | LangSmith API key for tracing |
+| `LANGSMITH_PROJECT` | No | LangSmith project name (default: `linkedin-ai-comment-copilot`) |
 | `HOST` | No | Server host (default: `0.0.0.0`) |
 | `PORT` | No | Server port (default: `8000`) |
 
@@ -516,6 +516,58 @@ After making changes to the extension:
 | [Model & LLM Integration](doc/MODEL_AND_LLM_INTEGRATION.md) | LLM configuration, models & routing |
 | [Environment Setup](doc/ENVIRONMENT_SETUP.md) | Environment variables & setup guide |
 | [API Reference](doc/API_REFERENCE.md) | Complete API documentation |
+
+---
+
+## Troubleshooting
+
+### Windows Async DNS Issue
+
+If you encounter `Cannot connect to host ... Could not contact DNS servers` errors, this is a known Windows issue with `aiodns` (used by aiohttp/litellm for async DNS resolution).
+
+**Fix:** Uninstall `aiodns` and `pycares`:
+
+```bash
+pip uninstall aiodns pycares -y
+```
+
+This forces aiohttp to fall back to the system DNS resolver, which works correctly on Windows.
+
+### LangSmith Tracing Not Working
+
+If you see `WARNING: LANGSMITH_API_KEY not set`, ensure your `.env` file uses the **new** LangSmith environment variable names:
+
+```env
+# Old (deprecated) — do NOT use
+# LANGCHAIN_API_KEY=...
+# LANGCHAIN_PROJECT=...
+
+# New — use these
+LANGSMITH_API_KEY=your_key_here
+LANGSMITH_PROJECT=linkedin-ai-comment-copilot
+```
+
+### Comment Generation Fails
+
+1. **Check API keys are set**: Run `python -m backend.test_models` to verify connectivity
+2. **Check backend logs**: Look for errors in the uvicorn console
+3. **Test the API directly**:
+   ```bash
+   curl -X POST http://localhost:8000/generate-comment \
+     -H "Content-Type: application/json" \
+     -d '{"post_content": "Hello world", "tone": "professional"}'
+   ```
+
+### Extension Not Detecting Posts
+
+- Refresh the LinkedIn page after installing/reloading the extension
+- Ensure the extension has `activeTab` permission
+- Check Chrome DevTools console for errors
+
+### Extension Button Not Appearing
+
+- LinkedIn frequently updates its DOM structure
+- Open an issue with the post HTML structure if buttons stop appearing
 
 ---
 

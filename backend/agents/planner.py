@@ -4,10 +4,10 @@ from langchain_core.runnables import Runnable
 
 try:
     from ..prompts.planner_prompt import planner_prompt
-    from ..models.llm import create_llm, get_default_llm_config
+    from ..models.llm import create_llm, get_default_llm_config, get_fallback_llm_config
 except ImportError:
     from prompts.planner_prompt import planner_prompt
-    from models.llm import create_llm, get_default_llm_config
+    from models.llm import create_llm, get_default_llm_config, get_fallback_llm_config
 
 
 def create_planner_agent(llm_config=None) -> Runnable:
@@ -22,11 +22,27 @@ def create_planner_agent(llm_config=None) -> Runnable:
 
 
 async def plan_strategy(post_type: str, category: str, tone: str, llm_config=None) -> Dict[str, Any]:
-    """Plan the comment strategy based on post type and tone."""
-    agent = create_planner_agent(llm_config)
-    result = await agent.ainvoke({
-        "post_type": post_type,
-        "category": category,
-        "tone": tone,
-    })
-    return result
+    """Plan the comment strategy based on post type and tone with fallback to Groq."""
+    try:
+        agent = create_planner_agent(llm_config)
+        result = await agent.ainvoke({
+            "post_type": post_type,
+            "category": category,
+            "tone": tone,
+        })
+        return result
+    except Exception as primary_error:
+        print(f"Primary LLM failed (Gemini): {primary_error}")
+        print("Falling back to Groq...")
+        try:
+            fallback_config = get_fallback_llm_config()
+            agent = create_planner_agent(fallback_config)
+            result = await agent.ainvoke({
+                "post_type": post_type,
+                "category": category,
+                "tone": tone,
+            })
+            return result
+        except Exception as fallback_error:
+            print(f"Fallback LLM also failed (Groq): {fallback_error}")
+            raise fallback_error

@@ -3,65 +3,114 @@
 const API_BASE_URL = 'http://localhost:8000';
 const STORAGE_KEY = 'linkedin_ai_copilot_state';
 
-// DOM Elements
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+function log(label, ...args) {
+  console.log(`[AI Copilot][Popup] ${label}`, ...args);
+}
+
+function logError(label, ...args) {
+  console.error(`[AI Copilot][Popup] ${label}`, ...args);
+}
+
+// ─── DOM References ─────────────────────────────────────────────────────────
+
+const $ = (id) => document.getElementById(id);
+
 const elements = {
-  status: document.getElementById('status'),
-  statusDot: document.querySelector('.status-dot'),
-  statusText: document.querySelector('.status-text'),
-  tone: document.getElementById('tone'),
-  commentBox: document.getElementById('commentBox'),
-  placeholder: document.getElementById('placeholder'),
-  commentText: document.getElementById('commentText'),
-  commentActions: document.getElementById('commentActions'),
-  btnCopy: document.getElementById('btnCopy'),
-  btnRegenerate: document.getElementById('btnRegenerate'),
-  btnInsert: document.getElementById('btnInsert'),
+  status:        $('status'),
+  statusText:    document.querySelector('.status-text'),
+  tonePills:     document.querySelectorAll('.tone-pill'),
+  postPreview:   $('postPreview'),
+  postContent:   $('postContent'),
+  commentBox:    $('commentBox'),
+  placeholder:   $('placeholder'),
+  commentText:   $('commentText'),
+  skeleton:      $('skeleton'),
+  commentActions:$('commentActions'),
+  wordCount:     $('wordCount'),
+  btnCopy:       $('btnCopy'),
+  btnRegenerate: $('btnRegenerate'),
+  btnInsert:     $('btnInsert'),
+  toast:         $('toast'),
+  toastMessage:  $('toastMessage'),
 };
 
-// State
+// ─── State ──────────────────────────────────────────────────────────────────
+
 let currentComment = '';
 let currentPostContent = '';
+let selectedTone = 'professional';
 let isLoading = false;
 
-// Initialize
+// ─── Init ───────────────────────────────────────────────────────────────────
+
 document.addEventListener('DOMContentLoaded', async () => {
-  await loadState();
-  await checkHealth();
+  log('Popup opened');
+
+  await loadStateFromStorage();
   setupEventListeners();
+  checkHealth();
+  updateTonePillsUI();
+  updatePostPreview(currentPostContent);
+
+  // If we have a persisted comment, show it immediately
+  if (currentComment) {
+    log('Restoring persisted comment');
+    displayComment(currentComment);
+  }
 });
 
-// Load saved state
-async function loadState() {
+// ─── Storage ────────────────────────────────────────────────────────────────
+
+async function loadStateFromStorage() {
   try {
     const result = await chrome.storage.local.get(STORAGE_KEY);
     const state = result[STORAGE_KEY];
-    if (state) {
-      if (state.tone) {
-        elements.tone.value = state.tone;
-      }
-      if (state.comment) {
-        displayComment(state.comment);
-      }
+
+    if (!state) {
+      log('No persisted state found');
+      return;
+    }
+
+    log('Loaded state from storage', {
+      hasComment: !!state.comment,
+      hasPost: !!state.postContent,
+      tone: state.tone,
+      timestamp: state.timestamp ? new Date(state.timestamp).toISOString() : 'none',
+    });
+
+    if (state.tone) {
+      selectedTone = state.tone;
+    }
+    if (state.comment) {
+      currentComment = state.comment;
+    }
+    if (state.postContent) {
+      currentPostContent = state.postContent;
     }
   } catch (error) {
-    console.error('Failed to load state:', error);
+    logError('Failed to load state', error);
   }
 }
 
-// Save state
-async function saveState() {
+async function saveStateToStorage() {
   try {
     const state = {
-      tone: elements.tone.value,
+      tone: selectedTone,
       comment: currentComment,
+      postContent: currentPostContent,
+      timestamp: Date.now(),
     };
     await chrome.storage.local.set({ [STORAGE_KEY]: state });
+    log('State saved to storage');
   } catch (error) {
-    console.error('Failed to save state:', error);
+    logError('Failed to save state', error);
   }
 }
 
-// Check API health
+// ─── Health Check ───────────────────────────────────────────────────────────
+
 async function checkHealth() {
   try {
     setStatus('loading', 'Checking...');
@@ -76,65 +125,205 @@ async function checkHealth() {
   }
 }
 
-// Set status indicator
 function setStatus(status, text) {
-  elements.status.className = `status ${status === 'loading' ? 'loading' : status === 'connected' ? '' : 'error'}`;
+  if (!elements.status || !elements.statusText) return;
+  elements.status.className = `status ${status}`;
   elements.statusText.textContent = text;
 }
 
-// Setup event listeners
+// ─── Event Listeners ────────────────────────────────────────────────────────
+
 function setupEventListeners() {
-  // Tone change
-  elements.tone.addEventListener('change', () => {
-    saveState();
+  // Tone pill clicks
+  elements.tonePills.forEach(pill => {
+    pill.addEventListener('click', () => {
+      if (isLoading) return;
+
+      const tone = pill.dataset.tone;
+      if (tone === selectedTone) return;
+
+      selectedTone = tone;
+      updateTonePillsUI();
+      saveStateToStorage();
+
+      // Auto-regenerate if we have post content
+      if (currentPostContent) {
+        generateComment(currentPostContent);
+      }
+    });
   });
 
   // Copy button
-  elements.btnCopy.addEventListener('click', () => {
+  elements.btnCopy?.addEventListener('click', () => {
     copyToClipboard(currentComment);
   });
 
   // Regenerate button
-  elements.btnRegenerate.addEventListener('click', () => {
+  elements.btnRegenerate?.addEventListener('click', () => {
     if (currentPostContent) {
       generateComment(currentPostContent);
     }
   });
 
   // Insert button
-  elements.btnInsert.addEventListener('click', () => {
+  elements.btnInsert?.addEventListener('click', () => {
     insertComment(currentComment);
   });
 
-  // Listen for messages from content script
+  // ─── Message Listener ──────────────────────────────────────────────────
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.type === 'GENERATE_COMMENT') {
-      currentPostContent = message.postContent;
-      generateComment(message.postContent);
-      sendResponse({ success: true });
+    log('Message received', message.type);
+
+    switch (message.type) {
+      case 'COMMENT_GENERATED':
+        handleCommentGenerated(message);
+        break;
+
+      case 'GENERATE_COMMENT':
+        handleExternalGenerate(message);
+        break;
     }
-    return true;
+
+    // Return false — we never need to sendResponse from the popup
+    return false;
   });
 }
 
-// Generate comment via API
+// ─── Message Handlers ───────────────────────────────────────────────────────
+
+function handleCommentGenerated(message) {
+  log('Comment generated', {
+    commentLength: message.comment?.length,
+    postLength: message.postContent?.length,
+  });
+
+  if (!message.comment) {
+    logError('Received empty comment');
+    return;
+  }
+
+  currentComment = message.comment;
+  currentPostContent = message.postContent || currentPostContent;
+
+  displayComment(currentComment);
+  updatePostPreview(currentPostContent);
+  setStatus('connected', 'Connected');
+  saveStateToStorage();
+}
+
+function handleExternalGenerate(message) {
+  if (message.postContent) {
+    currentPostContent = message.postContent;
+    updatePostPreview(message.postContent);
+    saveStateToStorage();
+    generateComment(message.postContent);
+  }
+}
+
+// ─── UI Updates ─────────────────────────────────────────────────────────────
+
+function updateTonePillsUI() {
+  elements.tonePills.forEach(pill => {
+    pill.classList.toggle('active', pill.dataset.tone === selectedTone);
+  });
+}
+
+function updatePostPreview(content) {
+  if (!elements.postContent) return;
+
+  if (content && content.trim()) {
+    elements.postContent.textContent = content;
+    elements.postContent.classList.remove('placeholder-text');
+  } else {
+    elements.postContent.textContent = 'Click "Generate AI Comment" on any LinkedIn post to get started...';
+    elements.postContent.classList.add('placeholder-text');
+  }
+}
+
+function displayComment(comment) {
+  if (!comment) {
+    log('displayComment called with empty comment');
+    return;
+  }
+
+  log('Displaying comment', comment.substring(0, 60) + '...');
+
+  // Hide placeholder
+  if (elements.placeholder) {
+    elements.placeholder.style.display = 'none';
+  }
+
+  // Hide skeleton
+  if (elements.skeleton) {
+    elements.skeleton.style.display = 'none';
+  }
+
+  // Show comment text
+  if (elements.commentText) {
+    elements.commentText.textContent = comment;
+    elements.commentText.classList.add('visible');
+  }
+
+  // Show action buttons
+  if (elements.commentActions) {
+    elements.commentActions.style.display = 'flex';
+  }
+
+  // Highlight comment box
+  if (elements.commentBox) {
+    elements.commentBox.classList.add('active');
+  }
+
+  // Update word count
+  if (elements.wordCount) {
+    const count = comment.split(/\s+/).filter(w => w.length > 0).length;
+    elements.wordCount.textContent = `${count} words`;
+  }
+
+  currentComment = comment;
+}
+
+function setLoadingState(loading) {
+  isLoading = loading;
+
+  if (loading) {
+    if (elements.placeholder) elements.placeholder.style.display = 'none';
+    if (elements.commentText) elements.commentText.classList.remove('visible');
+    if (elements.skeleton) elements.skeleton.style.display = 'flex';
+    if (elements.commentActions) elements.commentActions.style.display = 'none';
+    if (elements.commentBox) elements.commentBox.classList.remove('active');
+    if (elements.btnCopy) elements.btnCopy.disabled = true;
+    if (elements.btnInsert) elements.btnInsert.disabled = true;
+    if (elements.btnRegenerate) elements.btnRegenerate.disabled = true;
+  } else {
+    if (elements.skeleton) elements.skeleton.style.display = 'none';
+    if (elements.btnCopy) elements.btnCopy.disabled = false;
+    if (elements.btnInsert) elements.btnInsert.disabled = false;
+    if (elements.btnRegenerate) elements.btnRegenerate.disabled = false;
+  }
+}
+
+// ─── Comment Generation ─────────────────────────────────────────────────────
+
 async function generateComment(postContent) {
-  if (isLoading) return;
+  if (isLoading) {
+    log('Already loading, skipping');
+    return;
+  }
 
   try {
-    isLoading = true;
     setLoadingState(true);
     setStatus('loading', 'Generating...');
-    elements.btnRegenerate.disabled = true;
+    document.body.classList.add('generating');
+
+    log('Calling API directly from popup');
 
     const response = await fetch(`${API_BASE_URL}/generate-comment`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         post_content: postContent,
-        tone: elements.tone.value,
+        tone: selectedTone,
       }),
     });
 
@@ -143,85 +332,107 @@ async function generateComment(postContent) {
     }
 
     const data = await response.json();
+
+    if (!data.comment) {
+      throw new Error('API returned empty comment');
+    }
+
     currentComment = data.comment;
+    currentPostContent = postContent;
     displayComment(currentComment);
-    await saveState();
+    await saveStateToStorage();
     setStatus('connected', 'Connected');
+    log('Comment generated from popup direct call');
   } catch (error) {
-    console.error('Generation failed:', error);
+    logError('Generation failed', error.message);
     setStatus('error', 'Generation failed');
-    elements.commentText.textContent = 'Failed to generate comment. Please try again.';
-    elements.placeholder.style.display = 'none';
-    elements.commentText.style.display = 'block';
   } finally {
-    isLoading = false;
     setLoadingState(false);
-    elements.btnRegenerate.disabled = false;
+    document.body.classList.remove('generating');
   }
 }
 
-// Display comment
-function displayComment(comment) {
-  elements.placeholder.style.display = 'none';
-  elements.commentText.textContent = comment;
-  elements.commentText.style.display = 'block';
-  elements.commentActions.style.display = 'flex';
-  currentComment = comment;
-}
+// ─── Actions ────────────────────────────────────────────────────────────────
 
-// Set loading state
-function setLoadingState(loading) {
-  if (loading) {
-    elements.commentBox.classList.add('loading');
-    elements.btnCopy.disabled = true;
-    elements.btnInsert.disabled = true;
-  } else {
-    elements.commentBox.classList.remove('loading');
-    elements.btnCopy.disabled = false;
-    elements.btnInsert.disabled = false;
-  }
-}
-
-// Copy to clipboard
 async function copyToClipboard(text) {
+  if (!text) {
+    showToast('No comment to copy', 'error');
+    return;
+  }
+
   try {
     await navigator.clipboard.writeText(text);
-    const originalText = elements.btnCopy.innerHTML;
-    elements.btnCopy.innerHTML = `
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <polyline points="20 6 9 17 4 12"></polyline>
-      </svg>
-      Copied!
-    `;
-    setTimeout(() => {
-      elements.btnCopy.innerHTML = originalText;
-    }, 2000);
+    showToast('Copied to clipboard!');
   } catch (error) {
-    console.error('Copy failed:', error);
+    logError('Copy failed', error);
+    // Fallback: use execCommand
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      showToast('Copied to clipboard!');
+    } catch (fallbackError) {
+      showToast('Failed to copy', 'error');
+    }
   }
 }
 
-// Insert comment into LinkedIn
 async function insertComment(comment) {
+  if (!comment) {
+    showToast('No comment to insert', 'error');
+    return;
+  }
+
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tab && tab.url.includes('linkedin.com')) {
-      chrome.tabs.sendMessage(tab.id, {
-        type: 'INSERT_COMMENT',
-        comment: comment,
-      });
-      const originalText = elements.btnInsert.innerHTML;
-      elements.btnInsert.innerHTML = `
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="20 6 9 17 4 12"></polyline>
-        </svg>
-        Inserted!
-      `;
-      setTimeout(() => {
-        elements.btnInsert.innerHTML = originalText;
-      }, 2000);
+    if (!tab) {
+      showToast('No active tab', 'error');
+      return;
     }
+
+    if (!tab.url?.includes('linkedin.com')) {
+      showToast('Open LinkedIn to insert', 'error');
+      return;
+    }
+
+    await chrome.tabs.sendMessage(tab.id, {
+      type: 'INSERT_COMMENT',
+      comment,
+    });
+    showToast('Comment inserted!');
   } catch (error) {
-    console.error('Insert failed:', error);
+    logError('Insert failed', error);
+    showToast('Failed to insert — is the comment box open?', 'error');
   }
+}
+
+// ─── Toast ──────────────────────────────────────────────────────────────────
+
+function showToast(message, type = 'success') {
+  if (!elements.toast || !elements.toastMessage) return;
+
+  elements.toastMessage.textContent = message;
+  elements.toast.className = `toast ${type}`;
+
+  const toastIcon = elements.toast.querySelector('svg');
+  if (toastIcon) {
+    if (type === 'error') {
+      toastIcon.innerHTML = '<circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line>';
+      toastIcon.style.color = '#f87171';
+    } else {
+      toastIcon.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline>';
+      toastIcon.style.color = '#4ade80';
+    }
+  }
+
+  elements.toast.classList.add('show');
+
+  setTimeout(() => {
+    elements.toast.classList.remove('show');
+  }, 2500);
 }

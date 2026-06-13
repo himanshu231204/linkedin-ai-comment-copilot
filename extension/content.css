@@ -2,86 +2,105 @@
 
 /* Generate Button */
 .ai-comment-copilot-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  margin-left: 8px;
-  border: 1px solid #0a66c2;
-  border-radius: 20px;
-  background: transparent;
-  color: #0a66c2;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 8px 14px !important;
+  margin: 0 8px !important;
+  border: none !important;
+  border-radius: 20px !important;
+  background: linear-gradient(135deg, #0a66c2 0%, #004182 100%) !important;
+  color: white !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  box-shadow: 0 2px 8px rgba(10, 102, 194, 0.3) !important;
+  z-index: 100 !important;
+  position: relative !important;
 }
 
 .ai-comment-copilot-btn:hover {
-  background: #0a66c2;
-  color: white;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 12px rgba(10, 102, 194, 0.4) !important;
+}
+
+.ai-comment-copilot-btn:active {
+  transform: translateY(0) !important;
 }
 
 .ai-comment-copilot-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+  opacity: 0.6 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
 }
 
 .ai-comment-copilot-btn.loading {
-  background: #f3f2ef;
-  border-color: #e8e8e8;
-  color: #666666;
+  background: #f3f2ef !important;
+  box-shadow: none !important;
+}
+
+.ai-comment-copilot-btn.loading svg {
+  color: #666666 !important;
 }
 
 .ai-comment-copilot-btn svg {
-  width: 16px;
-  height: 16px;
+  width: 14px !important;
+  height: 14px !important;
+  flex-shrink: 0 !important;
+}
+
+.ai-comment-copilot-btn span {
+  white-space: nowrap !important;
 }
 
 /* Spinner Animation */
 .ai-comment-copilot-btn .spinner {
-  animation: spin 1s linear infinite;
+  animation: aicc-spin 1s linear infinite !important;
 }
 
-@keyframes spin {
+@keyframes aicc-spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
 
 /* Notification */
 .ai-comment-notification {
-  position: fixed;
-  bottom: 20px;
-  left: 50%;
-  transform: translateX(-50%) translateY(100px);
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  z-index: 10000;
-  opacity: 0;
-  transition: all 0.3s ease;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  position: fixed !important;
+  bottom: 24px !important;
+  left: 50% !important;
+  transform: translateX(-50%) translateY(100px) !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 14px 24px !important;
+  border-radius: 100px !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  z-index: 10000 !important;
+  opacity: 0 !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15) !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
 }
 
 .ai-comment-notification.show {
-  transform: translateX(-50%) translateY(0);
-  opacity: 1;
+  transform: translateX(-50%) translateY(0) !important;
+  opacity: 1 !important;
 }
 
 .ai-comment-notification.success {
-  background: #057642;
-  color: white;
+  background: #057642 !important;
+  color: white !important;
 }
 
 .ai-comment-notification.error {
-  background: #cc1016;
-  color: white;
+  background: #cc1016 !important;
+  color: white !important;
 }
 
 .ai-comment-notification.info {
-  background: #0a66c2;
-  color: white;
+  background: #0a66c2 !important;
+  color: white !important;
 }
