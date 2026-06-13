@@ -38,6 +38,11 @@ LinkedIn AI Comment Copilot is a full-stack application consisting of a **Chrome
 
 ---
 
+
+<div align="center">
+  <img src="https://www.youtube.com/watch?v=kjruA8Rzmbw" />
+</div>
+
 ## Features
 
 | Feature | Description |
