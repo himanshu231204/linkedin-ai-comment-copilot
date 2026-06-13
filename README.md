@@ -8,9 +8,10 @@
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-green.svg)](https://python.org)
 [![LangGraph](https://img.shields.io/badge/LangGraph-Multi--Agent-orange.svg)](https://langchain-ai.github.io/langgraph/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Async-blue.svg)](https://fastapi.tiangolo.com/)
+[![LangSmith](https://img.shields.io/badge/LangSmith-Tracking-blueviolet.svg)](https://smith.langchain.com/)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-yellow.svg)](https://developer.chrome.com/docs/extensions/mv3/)
 
-*Generate context-aware, human-like LinkedIn comments in real time using a LangGraph multi-agent workflow powered by LLMGateway.*
+*Generate context-aware, human-like LinkedIn comments in real time using a LangGraph multi-agent workflow with Gemini and Llama 3.3.*
 
 [Features](#features) | [Architecture](#architecture) | [Quick Start](#quick-start) | [API Reference](#api-reference) | [Extension Setup](#extension-setup)
 
@@ -20,13 +21,14 @@
 
 ## Overview
 
-LinkedIn AI Comment Copilot is a full-stack application consisting of a **Chrome Extension** and a **FastAPI backend** that work together to analyze LinkedIn posts and generate high-quality, context-aware comments. The system uses a **LangGraph multi-agent workflow** with four specialized agents to ensure every comment is relevant, professional, and human-sounding.
+LinkedIn AI Comment Copilot is a full-stack application consisting of a **Chrome Extension** and a **FastAPI backend** that work together to analyze LinkedIn posts and generate high-quality, context-aware comments. The system uses a **LangGraph multi-agent workflow** with four specialized agents — each powered by the optimal LLM for its task — to ensure every comment is relevant, professional, and human-sounding.
 
 **Key highlights:**
 - No database required
 - No user authentication
 - No data storage — everything runs in real time
-- Smart model routing based on post content and complexity
+- Per-agent model routing (Gemini for analysis, Llama 3.3 for writing/review)
+- LangSmith observability for full trace visibility
 - Multiple comment tones to match your style
 
 ---
@@ -38,7 +40,8 @@ LinkedIn AI Comment Copilot is a full-stack application consisting of a **Chrome
 | **Post Detection** | Automatically detects all visible LinkedIn posts on your feed |
 | **AI Comment Button** | Injects a "Generate AI Comment" button under every post |
 | **Tone Selector** | Choose from 10 comment tones: Professional, Technical, Supportive, Networking, Thoughtful, Friendly, Encouraging, Curious, Founder, Recruiter |
-| **Smart Model Routing** | Automatically selects the optimal LLM (Gemini Flash, Claude Sonnet 4, or GPT-5.5) based on post content |
+| **Per-Agent Model Routing** | Each agent uses the optimal LLM — Gemini 2.5 Flash for analysis, Llama 3.3 70B for writing & review |
+| **LangSmith Observability** | Full trace visibility for every request through the multi-agent pipeline |
 | **One-Click Copy** | Copy generated comments to clipboard instantly |
 | **Insert to LinkedIn** | Automatically fills the LinkedIn comment box with one click |
 | **Regenerate** | Generate alternative variations with a single click |
@@ -56,12 +59,13 @@ graph TD
     B -->|Extracts Content| C[Content Script]
     C -->|"Click 'Generate AI Comment'"| D[Background Service Worker]
     D -->|"POST /generate-comment"| E[FastAPI Backend]
+    E -->|Configures| LS[LangSmith Tracing]
     E -->|Invokes| F[LangGraph Workflow]
     
-    F --> G[1. Analyzer Agent]
-    G -->|Classifies post type,<br>category, sentiment| H[2. Planner Agent]
-    H -->|Determines comment<br>strategy| I[3. Writer Agent]
-    I -->|Generates comment| J[4. Reviewer Agent]
+    F --> G["1. Analyzer Agent<br/><i>Gemini 2.5 Flash</i>"]
+    G -->|post_type, category, sentiment| H["2. Planner Agent<br/><i>Gemini 2.5 Flash</i>"]
+    H -->|strategy| I["3. Writer Agent<br/><i>Llama 3.3 70B via Groq</i>"]
+    I -->|generated_comment| J["4. Reviewer Agent<br/><i>Llama 3.3 70B via Groq</i>"]
     
     J -->|Approved| K[Return Comment]
     J -->|Rejected| I
@@ -73,44 +77,51 @@ graph TD
     
     style A fill:#0A66C2,color:#fff
     style F fill:#FF6B35,color:#fff
-    style G fill:#2196F3,color:#fff
-    style H fill:#9C27B0,color:#fff
-    style I fill:#4CAF50,color:#fff
-    style J fill:#FF9800,color:#fff
+    style G fill:#4285F4,color:#fff
+    style H fill:#4285F4,color:#fff
+    style I fill:#F55036,color:#fff
+    style J fill:#F55036,color:#fff
+    style LS fill:#6C47FF,color:#fff
+```
+
+### Agent Model Assignment
+
+```mermaid
+graph LR
+    subgraph "Google AI"
+        G["Gemini 2.5 Flash<br/>Fast analysis"]
+    end
+    
+    subgraph "Groq Cloud"
+        L["Llama 3.3 70B Versatile<br/>Quality generation"]
+    end
+    
+    A["Analyzer<br/>Classification"] --> G
+    P["Planner<br/>Strategy"] --> G
+    W["Writer<br/>Comment Gen"] --> L
+    R["Reviewer<br/>Quality Check"] --> L
+    
+    style G fill:#4285F4,color:#fff
+    style L fill:#F55036,color:#fff
 ```
 
 ### LangGraph Agent Pipeline
 
 ```mermaid
-graph LR
-    A[Post Content] --> B[Analyzer]
-    B -->|post_type, category, sentiment| C[Planner]
-    C -->|strategy| D[Writer]
-    D -->|generated_comment| E[Reviewer]
-    E -->|score >= threshold| F[Final Comment]
-    E -->|score < threshold| D
-    
-    style A fill:#E3F2FD
-    style B fill:#2196F3,color:#fff
-    style C fill:#9C27B0,color:#fff
-    style D fill:#4CAF50,color:#fff
-    style E fill:#FF9800,color:#fff
-    style F fill:#057642,color:#fff
-```
-
-### Model Router Logic
-
-```mermaid
 graph TD
-    A[LinkedIn Post] --> B{Post Length < 400 chars?}
-    B -->|Yes| C[Gemini 2.5 Flash<br>Fast & Cheap]
-    B -->|No| D{Contains Technical<br>Keywords?}
-    D -->|Yes| E[Claude Sonnet 4<br>Technical Expertise]
-    D -->|No| F[GPT-5.5<br>Premium Quality]
+    START((Start)) --> A[Analyzer]
+    A -->|post_type, category, sentiment| B[Planner]
+    B -->|strategy| C[Writer]
+    C -->|generated_comment| D[Reviewer]
+    D -->|"score >= 80"| E["Final Comment ✓"]
+    D -->|"score < 80"| C
+    E --> END((End))
     
-    style C fill:#4CAF50,color:#fff
-    style E fill:#9C27B0,color:#fff
-    style F fill:#2196F3,color:#fff
+    style A fill:#4285F4,color:#fff
+    style B fill:#4285F4,color:#fff
+    style C fill:#F55036,color:#fff
+    style D fill:#F55036,color:#fff
+    style E fill:#057642,color:#fff
 ```
 
 ### Project Structure
@@ -127,8 +138,8 @@ linkedin-ai-comment-copilot/
 │   ├── graph/
 │   │   └── comment_graph.py       # LangGraph workflow definition
 │   ├── models/
-│   │   ├── llm.py                 # LLMGateway configuration
-│   │   └── model_router.py        # Intelligent model selection
+│   │   ├── llm.py                 # LLM configs (Gemini + Groq)
+│   │   └── model_router.py        # Model selection utilities
 │   ├── prompts/
 │   │   ├── analyzer_prompt.py     # Analyzer system prompt
 │   │   ├── planner_prompt.py      # Planner system prompt
@@ -137,7 +148,16 @@ linkedin-ai-comment-copilot/
 │   ├── schemas/
 │   │   ├── request.py             # Pydantic request models
 │   │   └── response.py            # Pydantic response models
-│   └── requirements.txt           # Python dependencies
+│   ├── test_models.py             # Model connectivity test script
+│   ├── requirements.txt           # Python dependencies
+│   └── .env.example               # Environment variable template
+│
+├── doc/
+│   ├── ARCHITECTURE.md            # System architecture & mermaid diagrams
+│   ├── LANGGRAPH_WORKFLOW.md      # Detailed agent pipeline documentation
+│   ├── MODEL_AND_LLM_INTEGRATION.md  # LLM configuration & model docs
+│   ├── ENVIRONMENT_SETUP.md       # Environment setup guide
+│   └── API_REFERENCE.md           # Complete API documentation
 │
 ├── extension/
 │   ├── manifest.json              # Chrome Extension Manifest V3
@@ -163,7 +183,9 @@ linkedin-ai-comment-copilot/
 | **Framework** | FastAPI | Async API server |
 | **AI Orchestration** | LangGraph | Multi-agent workflow |
 | **LLM Integration** | LangChain + LiteLLM | Prompt management & LLM calls |
-| **LLM Provider** | LLMGateway | Unified API for GPT-5.5, Claude, Gemini |
+| **Analysis & Planning** | Gemini 2.5 Flash (Google) | Fast, accurate post classification & strategy |
+| **Writing & Review** | Llama 3.3 70B (Groq) | High-quality comment generation & quality review |
+| **Observability** | LangSmith | Tracing, monitoring & debugging |
 | **Validation** | Pydantic | Request/response schemas |
 | **Server** | Uvicorn | ASGI server |
 
@@ -178,11 +200,12 @@ linkedin-ai-comment-copilot/
 
 ### LLM Models
 
-| Model | Use Case | Trigger |
-|-------|----------|---------|
-| `google/gemini-2.5-flash` | Default — fast & cost-effective | Posts < 400 characters |
-| `anthropic/claude-sonnet-4` | Technical content expertise | Posts containing AI/ML keywords |
-| `openai/gpt-5.5` | Premium quality analysis | All other posts |
+| Agent | Model | Provider | Temperature | Purpose |
+|-------|-------|----------|-------------|---------|
+| **Analyzer** | `gemini/gemini-2.5-flash` | Google AI | 0.3 | Post classification, sentiment analysis |
+| **Planner** | `gemini/gemini-2.5-flash` | Google AI | 0.5 | Comment strategy determination |
+| **Writer** | `groq/llama-3.3-70b-versatile` | Groq Cloud | 0.7 | Comment generation |
+| **Reviewer** | `groq/llama-3.3-70b-versatile` | Groq Cloud | 0.3 | Quality scoring & approval |
 
 ---
 
@@ -192,12 +215,14 @@ linkedin-ai-comment-copilot/
 
 - Python 3.11 or higher
 - Google Chrome browser
-- [LLMGateway API key](https://llmgateway.io) (free tier available)
+- [Google AI API key](https://aistudio.google.com/apikey) (free tier available)
+- [Groq API key](https://console.groq.com/keys) (free tier available)
+- *(Optional)* [LangSmith API key](https://smith.langchain.com/settings) for tracing
 
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/linkedin-ai-comment-copilot.git
+git clone https://github.com/himanshu231204/linkedin-ai-comment-copilot.git
 cd linkedin-ai-comment-copilot
 ```
 
@@ -222,15 +247,49 @@ pip install -r requirements.txt
 # Create environment file
 cp .env.example .env
 
-# Add your API key to .env
-# LLMGATEWAY_API_KEY=your_api_key_here
+# Add your API keys to .env
 ```
 
-### 3. Start the Backend Server
+### 3. Configure Environment Variables
+
+Edit `backend/.env` with your API keys:
+
+```env
+# Required — Google AI (Analyzer + Planner agents)
+GOOGLE_API_KEY=your_google_api_key_here
+
+# Required — Groq (Writer + Reviewer agents)
+GROQ_API_KEY=your_groq_api_key_here
+
+# Optional — LangSmith tracing
+LANGCHAIN_API_KEY=your_langsmith_api_key_here
+LANGCHAIN_PROJECT=linkedin-ai-comment-copilot
+```
+
+### 4. Test Model Connectivity
 
 ```bash
-# From the backend directory
+python -m backend.test_models
+```
+
+You should see all 4 models pass:
+
+```
+[+] Analyzer  (Gemini 2.5 Flash): PASS
+[+] Planner   (Gemini 2.5 Flash): PASS
+[+] Writer    (Llama 3.3 70B - Groq): PASS
+[+] Reviewer  (Llama 3.3 70B - Groq): PASS
+```
+
+### 5. Start the Backend Server
+
+```bash
+# Option 1 — From the backend directory:
+cd backend
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
+# Option 2 — From the project root:
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 The API will be available at `http://localhost:8000`. Verify it's running:
@@ -240,7 +299,7 @@ curl http://localhost:8000/health
 # {"status": "healthy"}
 ```
 
-### 4. Install the Chrome Extension
+### 6. Install the Chrome Extension
 
 1. Open Chrome and navigate to `chrome://extensions/`
 2. Enable **Developer mode** (toggle in top-right corner)
@@ -248,7 +307,7 @@ curl http://localhost:8000/health
 4. Select the `extension/` folder from this project
 5. The extension icon will appear in your Chrome toolbar
 
-### 5. Start Using
+### 7. Start Using
 
 1. Navigate to [linkedin.com/feed](https://www.linkedin.com/feed/)
 2. Open the extension popup by clicking the icon in your toolbar
@@ -303,14 +362,6 @@ Generate a LinkedIn comment using the multi-agent workflow.
 }
 ```
 
-**Error Response:**
-
-```json
-{
-  "detail": "Failed to generate approved comment after review"
-}
-```
-
 ---
 
 ### GET `/health`
@@ -329,18 +380,18 @@ Check API health status.
 
 ## How It Works
 
-### 1. Post Analysis (Analyzer Agent)
+### 1. Post Analysis (Analyzer Agent — Gemini 2.5 Flash)
 
 The Analyzer agent classifies the LinkedIn post by:
 - **Post type**: Internship, Job Update, Promotion, Achievement, Project Showcase, Open Source, Research, Startup, AI/ML, Hackathon, Hiring
 - **Category**: Career, Technology, Industry, etc.
 - **Sentiment**: Positive, neutral, negative
 
-### 2. Strategy Planning (Planner Agent)
+### 2. Strategy Planning (Planner Agent — Gemini 2.5 Flash)
 
 Based on the post classification and selected tone, the Planner agent determines the optimal comment strategy — what angle to take, what to emphasize, and how to structure the response.
 
-### 3. Comment Writing (Writer Agent)
+### 3. Comment Writing (Writer Agent — Llama 3.3 70B via Groq)
 
 The Writer agent generates the actual comment following:
 - The determined strategy
@@ -348,7 +399,7 @@ The Writer agent generates the actual comment following:
 - LinkedIn best practices (1-3 lines, max 60 words)
 - Human-sounding, non-generic language
 
-### 4. Quality Review (Reviewer Agent)
+### 4. Quality Review (Reviewer Agent — Llama 3.3 70B via Groq)
 
 The Reviewer agent evaluates the generated comment on:
 - **Relevance** to the post content
@@ -361,20 +412,63 @@ If the comment doesn't meet quality standards, the workflow loops back to the Wr
 
 ---
 
+## Observability
+
+### LangSmith Integration
+
+All requests are automatically traced through LangSmith when configured. Each agent call, LLM invocation, and graph transition is logged.
+
+**Trace flow per request:**
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API as FastAPI
+    participant Graph as LangGraph
+    participant A as Analyzer
+    participant P as Planner
+    participant W as Writer
+    participant R as Reviewer
+    participant LS as LangSmith
+
+    Client->>API: POST /generate-comment
+    API->>Graph: ainvoke(state)
+    Graph->>A: analyze_post()
+    A->>A: Gemini 2.5 Flash
+    A-->>LS: Trace: Analyzer
+    A-->>Graph: post_type, category, sentiment
+    Graph->>P: plan_strategy()
+    P->>P: Gemini 2.5 Flash
+    P-->>LS: Trace: Planner
+    P-->>Graph: strategy
+    Graph->>W: write_comment()
+    W->>W: Llama 3.3 70B
+    W-->>LS: Trace: Writer
+    W-->>Graph: generated_comment
+    Graph->>R: review_comment()
+    R->>R: Llama 3.3 70B
+    R-->>LS: Trace: Reviewer
+    R-->>Graph: approved/score
+    Graph-->>API: final_comment
+    API-->>Client: {comment: "..."}
+```
+
+View traces at: https://smith.langchain.com
+
+---
+
 ## Configuration
 
 ### Environment Variables
 
-Create a `.env` file in the `backend/` directory:
-
-```env
-# Required
-LLMGATEWAY_API_KEY=your_llmgateway_api_key
-
-# Optional (defaults shown)
-# API_HOST=0.0.0.0
-# API_PORT=8000
-```
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `GOOGLE_API_KEY` | Yes | Google AI API key (Gemini models) |
+| `GROQ_API_KEY` | Yes | Groq API key (Llama 3.3 models) |
+| `LANGCHAIN_API_KEY` | No | LangSmith API key for tracing |
+| `LANGCHAIN_PROJECT` | No | LangSmith project name (default: `linkedin-ai-comment-copilot`) |
+| `HOST` | No | Server host (default: `0.0.0.0`) |
+| `PORT` | No | Server port (default: `8000`) |
 
 ### CORS Configuration
 
@@ -382,19 +476,6 @@ The backend is pre-configured to accept requests from:
 - Chrome Extension (`chrome-extension://*`)
 - Local development (`http://localhost:*`)
 - LinkedIn domains (`https://*.linkedin.com`)
-
----
-
-## Technical Keywords
-
-The model router detects these keywords to route posts to Claude Sonnet 4:
-
-```
-AI, ML, LLM, LangGraph, RAG, Agent, MCP, Vector Database, Transformer,
-Research, Machine Learning, Deep Learning, Neural Network, Fine-tuning,
-Prompt Engineering, Embeddings, LangChain, Hugging Face, PyTorch,
-TensorFlow, Kubernetes, Docker, Microservices, Distributed Systems
-```
 
 ---
 
@@ -422,9 +503,21 @@ After making changes to the extension:
 
 ---
 
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Architecture](doc/ARCHITECTURE.md) | System architecture with mermaid diagrams |
+| [LangGraph Workflow](doc/LANGGRAPH_WORKFLOW.md) | Detailed agent pipeline & state management |
+| [Model & LLM Integration](doc/MODEL_AND_LLM_INTEGRATION.md) | LLM configuration, models & routing |
+| [Environment Setup](doc/ENVIRONMENT_SETUP.md) | Environment variables & setup guide |
+| [API Reference](doc/API_REFERENCE.md) | Complete API documentation |
+
+---
+
 ## Security
 
-- **API Key Safety**: The LLMGateway API key is stored only on the backend server — never exposed to the extension
+- **API Key Safety**: API keys are stored only on the backend server — never exposed to the extension
 - **No Data Storage**: No posts, comments, or user data are stored anywhere
 - **Minimal Permissions**: The extension only requests `activeTab`, `scripting`, and `storage`
 - **CORS Protection**: Backend only accepts requests from allowed origins
@@ -434,9 +527,11 @@ After making changes to the extension:
 ## Roadmap
 
 ### V1.0 (Current)
-- Multi-agent comment generation
+- Multi-agent comment generation with per-agent model routing
+- Gemini 2.5 Flash for analysis & planning
+- Llama 3.3 70B via Groq for writing & review
 - 10 comment tones
-- Smart model routing
+- LangSmith observability
 - One-click copy/insert
 - Quality review system
 
@@ -473,13 +568,13 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 
 ## Author
 
-**Himanshu** — [LinkedIn](https://linkedin.com/in/your-profile) | [GitHub](https://github.com/yourusername)
+**Himanshu** — [LinkedIn](https://linkedin.com/in/himanshu231204) | [GitHub](https://github.com/himanshu231204)
 
 ---
 
 <div align="center">
 
-**Built with LangGraph, FastAPI, and Chrome Extension APIs**
+**Built with LangGraph, FastAPI, Gemini, Llama 3.3, and Chrome Extension APIs**
 
 *No database. No auth. Just intelligent comments.*
 
