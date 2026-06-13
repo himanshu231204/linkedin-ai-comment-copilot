@@ -294,7 +294,7 @@ Human: Post: {post_content}, Comment: {generated_comment}, Tone: {tone}
 
 ### LangSmith Integration
 
-When `LANGCHAIN_API_KEY` is set, all LangChain/LangGraph calls are automatically traced.
+When `LANGSMITH_API_KEY` is set, all LangChain/LangGraph calls are automatically traced.
 
 ```mermaid
 sequenceDiagram
@@ -338,9 +338,9 @@ sequenceDiagram
 |----------|----------|----------|-------------|
 | `GOOGLE_API_KEY` | Yes | Google AI | API key for Gemini models |
 | `GROQ_API_KEY` | Yes | Groq | API key for Llama 3.3 models |
-| `LANGCHAIN_API_KEY` | No | LangSmith | Tracing & observability |
-| `LANGCHAIN_PROJECT` | No | LangSmith | Project name (default: `linkedin-ai-comment-copilot`) |
-| `LANGCHAIN_ENDPOINT` | No | LangSmith | API endpoint (default: `https://api.smith.langchain.com`) |
+| `LANGSMITH_API_KEY` | No | LangSmith | Tracing & observability |
+| `LANGSMITH_PROJECT` | No | LangSmith | Project name (default: `linkedin-ai-comment-copilot`) |
+| `LANGSMITH_ENDPOINT` | No | LangSmith | API endpoint (default: `https://api.smith.langchain.com`) |
 | `HOST` | No | Server | Bind host (default: `0.0.0.0`) |
 | `PORT` | No | Server | Bind port (default: `8000`) |
 

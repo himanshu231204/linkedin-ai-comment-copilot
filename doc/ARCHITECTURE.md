@@ -60,7 +60,6 @@ graph LR
 graph TB
     subgraph "Chrome Extension"
         CTX["Content Script<br/>(LinkedIn page injection)"]
-        POP["Popup UI<br/>(tone selector, controls)"]
         BG["Background Service Worker<br/>(API orchestration)"]
     end
 
@@ -83,8 +82,7 @@ graph TB
         GROQLLAMA["Groq Llama 3.3 70B"]
     end
 
-    CTX --> BG
-    POP --> BG
+    CTX -->|"chrome.runtime<br/>sendMessage"| BG
     BG -->|"POST /generate-comment"| ROUTE
     ROUTE --> CORS
     CORS --> GRAPH
@@ -109,7 +107,7 @@ graph TB
 classDiagram
     class ChromeExtension {
         +ContentScript: injectButton()
-        +Popup: selectTone()
+        +ContentScript: showCommentNotification()
         +Background: callAPI()
     }
 
@@ -197,7 +195,8 @@ sequenceDiagram
 
     LG-->>API: final_comment
     API-->>Ext: {comment: "..."}
-    Ext-->>User: Display comment
+    Ext-->>Ext: Store in chrome.storage + broadcast
+    Ext-->>User: Show Comment Card<br/>(Copy/Insert/Dismiss)
 ```
 
 ### Data Transformations
@@ -293,12 +292,12 @@ graph TD
     subgraph "Manifest V3"
         BG["background.js<br/>Service Worker"]
         CTX["content.js<br/>Content Script"]
-        POPUP["popup.html/js<br/>Popup UI"]
     end
 
     subgraph "LinkedIn Page"
         POST["LinkedIn Post<br/>DOM Element"]
         BTN["AI Comment Button<br/>(injected)"]
+        CARD["Comment Card<br/>(generated UI)"]
         INPUT["Comment Box<br/>(auto-fill)"]
     end
 
@@ -309,11 +308,13 @@ graph TD
 
     CTX -->|"MutationObserver<br/>detects new posts"| POST
     CTX -->|"Inject button"| BTN
-    BTN -->|"Click"| BG
-    BG -->|"chrome.runtime<br/>sendMessage"| POPUP
-    POPUP -->|"fetch()"| GEN
-    GEN -->|"Response"| POPUP
-    POPUP -->|"Insert comment"| INPUT
+    BTN -->|"Click"| CTX
+    CTX -->|"chrome.runtime<br/>sendMessage"| BG
+    BG -->|"fetch()"| GEN
+    GEN -->|"Response"| BG
+    BG -->|"chrome.storage<br/>+ broadcast"| CTX
+    CTX -->|"showCommentNotification"| CARD
+    CARD -->|"Insert Comment"| INPUT
 ```
 
 ---
@@ -324,7 +325,7 @@ graph TD
 graph TB
     subgraph "Local Machine"
         BROWSER["Chrome Browser"]
-        EXT["Extension<br/>(content + popup)"]
+        EXT["Extension<br/>(content + background)"]
         SERVER["FastAPI Server<br/>(localhost:8000)"]
     end
 
@@ -358,7 +359,7 @@ graph TB
 | **LLM (Generation)** | Llama 3.3 70B | - | Meta open-source models |
 | **Inference** | Groq Cloud | - | Ultra-fast LLM inference |
 | **Extension** | Chrome MV3 | - | Browser extension standard |
-| **Frontend** | Vanilla JS | ES2022 | Zero-dependency UI |
+| **Frontend** | Vanilla JS | ES2022 | Content script + background worker |
 
 ---
 

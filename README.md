@@ -30,6 +30,7 @@ LinkedIn AI Comment Copilot is a full-stack application consisting of a **Chrome
 - Per-agent model routing (Gemini for analysis, Llama 3.3 for writing/review)
 - LangSmith observability for full trace visibility
 - Multiple comment tones to match your style
+- Comment card with Copy, Insert, and Dismiss actions
 
 ---
 
@@ -37,13 +38,14 @@ LinkedIn AI Comment Copilot is a full-stack application consisting of a **Chrome
 
 | Feature | Description |
 |---------|-------------|
-| **Post Detection** | Automatically detects all visible LinkedIn posts on your feed |
-| **AI Comment Button** | Injects a "Generate AI Comment" button under every post |
+| **Post Detection** | Automatically detects all visible LinkedIn posts using action-bar-first strategy |
+| **AI Comment Button** | Injects exactly one "Generate AI Comment" button per post (no duplicates) |
+| **Comment Card** | Displays generated comment in a prominent card with Copy, Insert, and Dismiss buttons |
+| **Insert to LinkedIn** | Automatically opens LinkedIn's comment box and fills it with the generated comment |
 | **Tone Selector** | Choose from 10 comment tones: Professional, Technical, Supportive, Networking, Thoughtful, Friendly, Encouraging, Curious, Founder, Recruiter |
 | **Per-Agent Model Routing** | Each agent uses the optimal LLM — Gemini 2.5 Flash for analysis, Llama 3.3 70B for writing & review |
 | **LangSmith Observability** | Full trace visibility for every request through the multi-agent pipeline |
 | **One-Click Copy** | Copy generated comments to clipboard instantly |
-| **Insert to LinkedIn** | Automatically fills the LinkedIn comment box with one click |
 | **Regenerate** | Generate alternative variations with a single click |
 | **Quality Review** | Built-in reviewer agent scores and approves comments before delivery |
 
@@ -72,7 +74,7 @@ graph TD
     
     K --> E
     E -->|Response| D
-    D -->|Display| L[Extension Popup]
+    D -->|Broadcast| L[Comment Card]
     L -->|Copy / Insert| M[User Action]
     
     style A fill:#0A66C2,color:#fff
@@ -84,44 +86,28 @@ graph TD
     style LS fill:#6C47FF,color:#fff
 ```
 
-### Agent Model Assignment
+### Message Flow (Extension)
 
 ```mermaid
-graph LR
-    subgraph "Google AI"
-        G["Gemini 2.5 Flash<br/>Fast analysis"]
-    end
-    
-    subgraph "Groq Cloud"
-        L["Llama 3.3 70B Versatile<br/>Quality generation"]
-    end
-    
-    A["Analyzer<br/>Classification"] --> G
-    P["Planner<br/>Strategy"] --> G
-    W["Writer<br/>Comment Gen"] --> L
-    R["Reviewer<br/>Quality Check"] --> L
-    
-    style G fill:#4285F4,color:#fff
-    style L fill:#F55036,color:#fff
-```
+sequenceDiagram
+    participant User as LinkedIn User
+    participant CS as Content Script
+    participant BG as Background Worker
+    participant API as FastAPI Backend
+    participant Card as Comment Card
 
-### LangGraph Agent Pipeline
-
-```mermaid
-graph TD
-    START((Start)) --> A[Analyzer]
-    A -->|post_type, category, sentiment| B[Planner]
-    B -->|strategy| C[Writer]
-    C -->|generated_comment| D[Reviewer]
-    D -->|"score >= 80"| E["Final Comment ✓"]
-    D -->|"score < 80"| C
-    E --> END((End))
-    
-    style A fill:#4285F4,color:#fff
-    style B fill:#4285F4,color:#fff
-    style C fill:#F55036,color:#fff
-    style D fill:#F55036,color:#fff
-    style E fill:#057642,color:#fff
+    User->>CS: Click "Generate AI Comment"
+    CS->>CS: Extract post content
+    CS->>BG: sendMessage(GENERATE_COMMENT)
+    BG->>API: POST /generate-comment
+    API-->>BG: {comment: "..."}
+    BG->>BG: Persist to chrome.storage.local
+    BG-->>CS: {success: true, comment}
+    CS->>Card: showCommentNotification(comment)
+    Card-->>User: Display comment card with Copy/Insert
+    User->>Card: Click "Insert Comment"
+    Card->>CS: insertCommentIntoLinkedIn(comment)
+    CS->>CS: Poll for comment box, insert text
 ```
 
 ### Project Structure
@@ -196,7 +182,7 @@ linkedin-ai-comment-copilot/
 | **Manifest** | V3 | Chrome Extension standard |
 | **Frontend** | Vanilla JS + HTML/CSS | Lightweight, no dependencies |
 | **API** | Chrome Extension APIs | Tab management, storage, messaging |
-| **Permissions** | `activeTab`, `scripting`, `storage` | Minimal required permissions |
+| **Permissions** | `activeTab`, `storage`, `clipboardWrite` | Minimal required permissions |
 
 ### LLM Models
 
@@ -313,7 +299,8 @@ curl http://localhost:8000/health
 2. Open the extension popup by clicking the icon in your toolbar
 3. Select your preferred comment tone
 4. Click **"Generate AI Comment"** on any post
-5. Copy, regenerate, or insert the generated comment
+5. A comment card appears with the generated comment
+6. Click **Copy** to copy to clipboard, or **Insert Comment** to paste into LinkedIn's comment box
 
 ---
 
@@ -380,35 +367,50 @@ Check API health status.
 
 ## How It Works
 
-### 1. Post Analysis (Analyzer Agent — Gemini 2.5 Flash)
+### 1. Post Detection (Content Script)
 
-The Analyzer agent classifies the LinkedIn post by:
-- **Post type**: Internship, Job Update, Promotion, Achievement, Project Showcase, Open Source, Research, Startup, AI/ML, Hackathon, Hiring
-- **Category**: Career, Technology, Industry, etc.
-- **Sentiment**: Positive, neutral, negative
+The content script uses an **action-bar-first strategy** to detect LinkedIn posts:
 
-### 2. Strategy Planning (Planner Agent — Gemini 2.5 Flash)
+1. Finds all social buttons (Like, Comment, Share) by text content
+2. Walks up the DOM to find the action bar container
+3. Walks further up to find the post container using heuristics
+4. Injects exactly one button per post using a `WeakSet` to track processed action bars
 
-Based on the post classification and selected tone, the Planner agent determines the optimal comment strategy — what angle to take, what to emphasize, and how to structure the response.
+This approach works with LinkedIn's obfuscated CSS-in-JS DOM because it relies on button text content (which never changes) rather than class names (which change every deploy).
 
-### 3. Comment Writing (Writer Agent — Llama 3.3 70B via Groq)
+### 2. Comment Generation (Backend)
 
-The Writer agent generates the actual comment following:
-- The determined strategy
-- The selected tone
-- LinkedIn best practices (1-3 lines, max 60 words)
-- Human-sounding, non-generic language
+When the button is clicked:
 
-### 4. Quality Review (Reviewer Agent — Llama 3.3 70B via Groq)
+1. **Content Script** sends `GENERATE_COMMENT` message to Background Worker
+2. **Background Worker** calls the FastAPI API
+3. **LangGraph Pipeline** executes 4 agents sequentially:
+   - **Analyzer** (Gemini 2.5 Flash): Classifies post type, category, sentiment
+   - **Planner** (Gemini 2.5 Flash): Determines comment strategy
+   - **Writer** (Llama 3.3 70B): Generates the comment
+   - **Reviewer** (Llama 3.3 70B): Scores and approves/rejects
+4. **Background Worker** persists the comment and broadcasts to Content Script
+5. **Content Script** displays the comment in a card
+
+### 3. Comment Card (UI)
+
+The comment card provides:
+
+- **Copy**: One-click copy to clipboard
+- **Insert Comment**: Opens LinkedIn's comment box and fills it with the generated comment using polling to wait for the dynamic comment box
+- **Dismiss**: Close the card (auto-dismisses after 60 seconds)
+
+### 4. Quality Review (Reviewer Agent)
 
 The Reviewer agent evaluates the generated comment on:
+
 - **Relevance** to the post content
 - **Human-likeness** and natural flow
 - **Spam score** (low is better)
 - **Generic score** (low is better)
 - **Professionalism** and appropriateness
 
-If the comment doesn't meet quality standards, the workflow loops back to the Writer for regeneration.
+If the comment doesn't meet quality standards (score < 80), the workflow loops back to the Writer for regeneration.
 
 ---
 
@@ -503,7 +505,22 @@ uvicorn backend.main:app --reload
 After making changes to the extension:
 1. Go to `chrome://extensions/`
 2. Click the refresh icon on your extension
-3. Reload the LinkedIn page
+3. Hard refresh the LinkedIn page (`Ctrl+Shift+R`)
+
+### Debug Utilities
+
+The content script exposes debug utilities in the browser console (select the content script context from the DevTools dropdown):
+
+```javascript
+// Check current state (posts found, buttons, login status)
+AICopilotDebug()
+
+// Test the full message flow (content → background → API)
+AICopilotTestFlow()
+
+// Inspect DOM structure around social buttons
+AICopilotInspectButtons()
+```
 
 ---
 
@@ -521,17 +538,30 @@ After making changes to the extension:
 
 ## Troubleshooting
 
-### Windows Async DNS Issue
+### Buttons Not Appearing
 
-If you encounter `Cannot connect to host ... Could not contact DNS servers` errors, this is a known Windows issue with `aiodns` (used by aiohttp/litellm for async DNS resolution).
+1. **Reload the extension**: Go to `chrome://extensions/` → click refresh
+2. **Hard refresh LinkedIn**: Press `Ctrl+Shift+R`
+3. **Check console logs**: Open DevTools → Console → look for `[AI Copilot]` logs
+4. **Verify login**: The extension only works on the LinkedIn feed when logged in
 
-**Fix:** Uninstall `aiodns` and `pycares`:
+### Comment Not Generated
 
-```bash
-pip uninstall aiodns pycares -y
-```
+1. **Check backend is running**: `curl http://localhost:8000/health`
+2. **Check API keys**: Run `python -m backend.test_models`
+3. **Check background script logs**: Go to `chrome://extensions/` → click "Service Worker" link under your extension
+4. **Test API directly**:
+   ```bash
+   curl -X POST http://localhost:8000/generate-comment \
+     -H "Content-Type: application/json" \
+     -d '{"post_content": "Hello world", "tone": "professional"}'
+   ```
 
-This forces aiohttp to fall back to the system DNS resolver, which works correctly on Windows.
+### Insert Comment Not Working
+
+1. **Click the Comment button first**: The Insert feature needs the comment box to be open
+2. **Wait for the comment box**: LinkedIn loads it dynamically (the extension polls for 2 seconds)
+3. **Check for errors**: Look for red error notifications from the extension
 
 ### LangSmith Tracing Not Working
 
@@ -547,27 +577,24 @@ LANGSMITH_API_KEY=your_key_here
 LANGSMITH_PROJECT=linkedin-ai-comment-copilot
 ```
 
-### Comment Generation Fails
+### Windows Async DNS Issue
 
-1. **Check API keys are set**: Run `python -m backend.test_models` to verify connectivity
-2. **Check backend logs**: Look for errors in the uvicorn console
-3. **Test the API directly**:
-   ```bash
-   curl -X POST http://localhost:8000/generate-comment \
-     -H "Content-Type: application/json" \
-     -d '{"post_content": "Hello world", "tone": "professional"}'
-   ```
+If you encounter `Cannot connect to host ... Could not contact DNS servers` errors, this is a known Windows issue with `aiodns` (used by aiohttp/litellm for async DNS resolution).
 
-### Extension Not Detecting Posts
+**Fix:** Uninstall `aiodns` and `pycares`:
 
-- Refresh the LinkedIn page after installing/reloading the extension
-- Ensure the extension has `activeTab` permission
-- Check Chrome DevTools console for errors
+```bash
+pip uninstall aiodns pycares -y
+```
 
-### Extension Button Not Appearing
+This forces aiohttp to fall back to the system DNS resolver, which works correctly on Windows.
 
-- LinkedIn frequently updates its DOM structure
-- Open an issue with the post HTML structure if buttons stop appearing
+### Extension Context Invalidated
+
+If you see "Extension context invalidated" errors:
+1. Reload the extension from `chrome://extensions/`
+2. Hard refresh the LinkedIn page (`Ctrl+Shift+R`)
+3. This happens when the extension is reloaded but the LinkedIn tab still has the old content script
 
 ---
 
@@ -575,8 +602,9 @@ LANGSMITH_PROJECT=linkedin-ai-comment-copilot
 
 - **API Key Safety**: API keys are stored only on the backend server — never exposed to the extension
 - **No Data Storage**: No posts, comments, or user data are stored anywhere
-- **Minimal Permissions**: The extension only requests `activeTab`, `scripting`, and `storage`
+- **Minimal Permissions**: The extension only requests `activeTab`, `storage`, and `clipboardWrite`
 - **CORS Protection**: Backend only accepts requests from allowed origins
+- **Message Passing**: Content script communicates with background service worker via Chrome's secure message passing
 
 ---
 
@@ -588,8 +616,10 @@ LANGSMITH_PROJECT=linkedin-ai-comment-copilot
 - Llama 3.3 70B via Groq for writing & review
 - 10 comment tones
 - LangSmith observability
-- One-click copy/insert
+- Comment card with Copy/Insert/Dismiss
+- Insert into LinkedIn comment box with polling
 - Quality review system
+- Action-bar-first post detection with WeakSet deduplication
 
 ### V2.0 (Planned)
 - [ ] Comment scoring & analytics
