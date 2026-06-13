@@ -51,7 +51,9 @@ graph LR
     style GROQ fill:#F55036,color:#fff
     style LS fill:#6C47FF,color:#fff
 ```
-
+<div align="center">
+  <img src="assets/System Overview.png" alt="System Overview" />
+</div>
 ---
 
 ## High-Level Architecture
@@ -98,7 +100,9 @@ graph TB
     WR --> GROQLLAMA
     RV --> GROQLLAMA
 ```
-
+<div align="center">
+  <img src="assets/High-Level Architecture.png" alt="High-Level Architecture" />
+</div>
 ---
 
 ## Component Diagram
@@ -158,6 +162,9 @@ classDiagram
     LangGraph --> ReviewerAgent
 ```
 
+<div align="center">
+  <img src="assets/component diagram.png" alt="Component Diagram" />
+</div>
 ---
 
 ## Data Flow
@@ -263,7 +270,10 @@ graph TD
     RV --> RP
     LLM --> ROUTER
 ```
-
+<div align="center">
+  <img src="assets/Module Structure.png" alt="Module Structure" />
+</div>
+---
 ### Error Handling Flow
 
 ```mermaid
@@ -282,7 +292,9 @@ graph TD
     style RES fill:#057642,color:#fff
     style HTTP fill:#F44336,color:#fff
 ```
-
+<div align="center">
+  <img src="assets/Error Handling Flow.png" alt="Error Handling Flow" />
+</div>
 ---
 
 ## Chrome Extension Architecture
@@ -316,7 +328,9 @@ graph TD
     CTX -->|"showCommentNotification"| CARD
     CARD -->|"Insert Comment"| INPUT
 ```
-
+<div align="center">
+  <img src="assets/Chrome Extension Architecture.png" alt="Chrome Extension Architecture" />
+</div>
 ---
 
 ## Network Topology
@@ -341,7 +355,9 @@ graph TB
     SERVER -->|"HTTPS"| GROQ_CLOUD
     SERVER -->|"HTTPS"| LS_CLOUD
 ```
-
+<div align="center">
+  <img src="assets/Network Topology.png" alt="Network Topology" />
+</div>
 ---
 
 ## Technology Stack
