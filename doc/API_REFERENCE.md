@@ -8,10 +8,11 @@
 
 1. [Base URL](#base-url)
 2. [POST /generate-comment](#post-generate-comment)
-3. [GET /health](#get-health)
-4. [Error Handling](#error-handling)
-5. [Request/Response Schemas](#requestresponse-schemas)
-6. [CORS Configuration](#cors-configuration)
+3. [POST /test-cost](#post-test-cost)
+4. [GET /health](#get-health)
+5. [Error Handling](#error-handling)
+6. [Request/Response Schemas](#requestresponse-schemas)
+7. [CORS Configuration](#cors-configuration)
 
 ---
 
@@ -139,6 +140,89 @@ sequenceDiagram
 
 ---
 
+## POST `/test-cost`
+
+Measure the token usage and USD cost of a single LLM call.
+
+### Request
+
+**Headers:** None required
+
+**Query Parameters:**
+
+| Param | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `agent` | string | No | `analyzer` | Which model to test: `analyzer`, `planner`, `writer`, or `reviewer` |
+
+**Example:**
+
+```bash
+curl -X POST "http://localhost:8000/test-cost?agent=analyzer"
+```
+
+### Model Selection
+
+| `agent` value | Model Used | Provider |
+|---------------|------------|----------|
+| `analyzer` | `gemini/gemini-2.5-flash` | Google AI |
+| `planner` | `gemini/gemini-2.5-flash` | Google AI |
+| `writer` | `groq/llama-3.3-70b-versatile` | Groq |
+| `reviewer` | `groq/llama-3.3-70b-versatile` | Groq |
+
+### Response
+
+**Success (200):**
+
+```json
+{
+  "model": "gemini/gemini-2.5-flash",
+  "prompt_tokens": 150,
+  "completion_tokens": 50,
+  "total_tokens": 200,
+  "input_cost_usd": 0.000045,
+  "output_cost_usd": 0.000125,
+  "total_cost_usd": 0.00017
+}
+```
+
+**Response Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `model` | string | Model identifier used for the call |
+| `prompt_tokens` | integer | Number of tokens in the input prompt |
+| `completion_tokens` | integer | Number of tokens in the generated response |
+| `total_tokens` | integer | Total tokens consumed |
+| `input_cost_usd` | float | Cost of input tokens in USD |
+| `output_cost_usd` | float | Cost of output tokens in USD |
+| `total_cost_usd` | float | Total cost in USD |
+
+### How Cost Is Calculated
+
+```mermaid
+flowchart LR
+    A[LLM Response] --> B[Extract token_usage]
+    B --> C{Model in litellm.model_cost?}
+    C -->|Yes| D[Use litellm pricing]
+    C -->|No| E[Use fallback pricing]
+    D --> F[Calculate USD cost]
+    E --> F
+    F --> G[Return LLMCostResult]
+
+    style A fill:#E3F2FD
+    style F fill:#057642,color:#fff
+    style G fill:#057642,color:#fff
+```
+
+**Pricing Reference:**
+
+| Model | Input (per 1M tokens) | Output (per 1M tokens) |
+|-------|----------------------|------------------------|
+| `gemini/gemini-2.5-flash` | $0.15 | $0.60 |
+| `groq/llama-3.3-70b-versatile` | $0.59 | $0.79 |
+
+---
+
 ## GET `/health`
 
 Check API health status.
@@ -167,7 +251,7 @@ Check API health status.
 
 | Code | Description | When |
 |------|-------------|------|
-| `200` | Success | Comment generated successfully |
+| `200` | Success | Comment generated or cost measured successfully |
 | `422` | Validation Error | Invalid request body (missing fields, wrong types) |
 | `500` | Internal Server Error | LLM failure, review exhaustion, server error |
 
@@ -239,6 +323,21 @@ class HealthResponse(BaseModel):
         default="healthy",
         description="API health status"
     )
+```
+
+### CostTestResponse
+
+```python
+from pydantic import BaseModel, Field
+
+class CostTestResponse(BaseModel):
+    model: str = Field(..., description="Model identifier used")
+    prompt_tokens: int = Field(..., description="Tokens in the prompt")
+    completion_tokens: int = Field(..., description="Tokens in the completion")
+    total_tokens: int = Field(..., description="Total tokens used")
+    input_cost_usd: float = Field(..., description="Cost of prompt tokens in USD")
+    output_cost_usd: float = Field(..., description="Cost of completion tokens in USD")
+    total_cost_usd: float = Field(..., description="Total cost in USD")
 ```
 
 ---

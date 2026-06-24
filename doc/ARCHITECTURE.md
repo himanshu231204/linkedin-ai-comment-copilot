@@ -66,7 +66,7 @@ graph TB
     end
 
     subgraph "FastAPI Backend"
-        ROUTE["API Routes<br/>/generate-comment<br/>/health"]
+        ROUTE["API Routes<br/>/generate-comment<br/>/test-cost<br/>/health"]
         CORS["CORS Middleware"]
         LS["LangSmith Config"]
     end
@@ -117,6 +117,7 @@ classDiagram
 
     class FastAPI {
         +POST /generate-comment()
+        +POST /test-cost()
         +GET /health()
         +configure_langsmith()
     }
@@ -128,6 +129,13 @@ classDiagram
         +writer_node()
         +reviewer_node()
         +should_regenerate()
+    }
+
+    class CostTracker {
+        +get_llm_cost(response, model)
+        +LLMCallbackHandler
+        +LLMCostResult
+        +_resolve_pricing()
     }
 
     class AnalyzerAgent {
@@ -156,6 +164,7 @@ classDiagram
 
     ChromeExtension --> FastAPI : HTTP
     FastAPI --> LangGraph : ainvoke()
+    FastAPI --> CostTracker : get_llm_cost()
     LangGraph --> AnalyzerAgent
     LangGraph --> PlannerAgent
     LangGraph --> WriterAgent
@@ -236,7 +245,7 @@ graph LR
 graph TD
     MAIN["main.py<br/>FastAPI App"]
     GRAPH["comment_graph.py<br/>LangGraph Workflow"]
-    LLM["llm.py<br/>LLM Configuration"]
+    LLM["llm.py<br/>LLM Configuration + Cost Tracking"]
     ROUTER["model_router.py<br/>Model Utilities"]
 
     AN["analyzer.py"]

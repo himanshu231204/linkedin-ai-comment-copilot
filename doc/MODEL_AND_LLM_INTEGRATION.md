@@ -11,11 +11,12 @@
 3. [Provider Configuration](#provider-configuration)
 4. [Agent Model Assignment](#agent-model-assignment)
 5. [LLM Configuration](#llm-configuration)
-6. [LangGraph Workflow](#langgraph-workflow)
-7. [Prompts](#prompts)
-8. [Observability](#observability)
-9. [Environment Variables](#environment-variables)
-10. [Troubleshooting](#troubleshooting)
+6. [Cost Tracking](#cost-tracking)
+7. [LangGraph Workflow](#langgraph-workflow)
+8. [Prompts](#prompts)
+9. [Observability](#observability)
+10. [Environment Variables](#environment-variables)
+11. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -184,6 +185,101 @@ def create_llm(config: LLMConfig, callbacks=None) -> ChatLiteLLM:
         kwargs["api_base"] = config.base_url
     return ChatLiteLLM(**kwargs)
 ```
+
+---
+
+## Cost Tracking
+
+The backend includes built-in LLM cost measurement. Every LLM call can be tracked for token usage and USD cost using LiteLLM's pricing database.
+
+### Architecture
+
+```mermaid
+flowchart TD
+    subgraph "LLM Call"
+        A[ChatLiteLLM.ainvoke] --> B[LLMResult]
+    end
+
+    subgraph "Cost Extraction"
+        B --> C[get_llm_cost]
+        C --> D{litellm.model_cost<br/>has model?}
+        D -->|Yes| E[Use litellm pricing]
+        D -->|No| F[Use fallback pricing]
+        E --> G[LLMCostResult]
+        F --> G
+    end
+
+    subgraph "Output"
+        G --> H[prompt_tokens]
+        G --> I[completion_tokens]
+        G --> J[total_cost_usd]
+    end
+
+    style C fill:#057642,color:#fff
+    style G fill:#057642,color:#fff
+```
+
+### Key Components
+
+#### `LLMCostResult` Dataclass
+
+Defined in `backend/models/llm.py`:
+
+```python
+@dataclass
+class LLMCostResult:
+    model: str = ""
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    input_cost_usd: float = 0.0
+    output_cost_usd: float = 0.0
+    total_cost_usd: float = 0.0
+```
+
+#### `get_llm_cost()` Function
+
+Extracts token usage from a LangChain `LLMResult` and computes cost:
+
+```python
+def get_llm_cost(response: LLMResult, model_name: str) -> LLMCostResult:
+    """Extract token usage from a LangChain LLMResult and compute cost."""
+    # Extracts from response.llm_output["token_usage"]
+    # Looks up pricing via litellm.model_cost or fallback table
+    # Returns LLMCostResult with USD costs
+```
+
+#### `LLMCallbackHandler`
+
+Automatic cost tracking when used as a LangChain callback:
+
+```python
+handler = LLMCallbackHandler()
+handler.set_model_name("gemini/gemini-2.5-flash")
+llm = create_llm(config, callbacks=[handler])
+await llm.ainvoke(messages)
+print(handler.last_cost.total_cost_usd)
+```
+
+### Pricing Table
+
+Cost is calculated using:
+
+1. **Primary**: `litellm.model_cost` — LiteLLM's built-in pricing database (auto-updated)
+2. **Fallback**: Hardcoded prices for the models used in this project
+
+| Model | Input (per 1M tokens) | Output (per 1M tokens) |
+|-------|----------------------|------------------------|
+| `gemini/gemini-2.5-flash` | $0.15 | $0.60 |
+| `groq/llama-3.3-70b-versatile` | $0.59 | $0.79 |
+
+### REST API Endpoint
+
+```
+POST /test-cost?agent={agent}
+```
+
+See [API Reference](API_REFERENCE.md#post-test-cost) for full documentation.
 
 ---
 
@@ -382,7 +478,7 @@ logging.basicConfig(level=logging.DEBUG)
 backend/
 ├── models/
 │   ├── __init__.py
-│   ├── llm.py                    # LLMConfig, create_llm, provider-specific configs
+│   ├── llm.py                    # LLMConfig, create_llm, cost tracking, provider configs
 │   └── model_router.py           # Model selection utilities, technical keywords
 ├── agents/
 │   ├── __init__.py

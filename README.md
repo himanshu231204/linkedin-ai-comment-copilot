@@ -64,6 +64,7 @@ LinkedIn AI Comment Copilot is a full-stack application consisting of a **Chrome
 | **One-Click Copy** | Copy generated comments to clipboard instantly |
 | **Regenerate** | Generate alternative variations with a single click |
 | **Quality Review** | Built-in reviewer agent scores and approves comments before delivery |
+| **LLM Cost Tracking** | Built-in cost measurement — test single-call cost via `/test-cost` endpoint |
 
 ---
 
@@ -147,7 +148,7 @@ linkedin-ai-comment-copilot/
 │   ├── graph/
 │   │   └── comment_graph.py       # LangGraph workflow definition
 │   ├── models/
-│   │   ├── llm.py                 # LLM configs (Gemini + Groq)
+│   │   ├── llm.py                 # LLM configs + cost tracking (Gemini + Groq)
 │   │   └── model_router.py        # Model selection utilities
 │   ├── prompts/
 │   │   ├── analyzer_prompt.py     # Analyzer system prompt
@@ -385,6 +386,94 @@ Check API health status.
   "status": "healthy"
 }
 ```
+
+---
+
+### POST `/test-cost`
+
+Measure the cost of a single LLM call.
+
+**Parameters:**
+
+| Param | Values | Model Tested |
+|-------|--------|--------------|
+| `agent` | `analyzer`, `planner` | Gemini 2.5 Flash |
+| `agent` | `writer`, `reviewer` | Groq Llama 3.3 70B |
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:8000/test-cost?agent=analyzer
+```
+
+**Response:**
+
+```json
+{
+  "model": "gemini/gemini-2.5-flash",
+  "prompt_tokens": 150,
+  "completion_tokens": 50,
+  "total_tokens": 200,
+  "input_cost_usd": 0.000045,
+  "output_cost_usd": 0.000125,
+  "total_cost_usd": 0.00017
+}
+```
+
+---
+
+## Cost Tracking
+
+The backend includes built-in LLM cost measurement. Every LLM call can be tracked for token usage and USD cost.
+
+### Cost Flow
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API as FastAPI
+    participant LLM as LLM Provider
+    participant Cost as Cost Tracker
+
+    Client->>API: POST /test-cost?agent=analyzer
+    API->>LLM: Send sample prompt to Gemini 2.5 Flash
+    LLM-->>API: Response + token usage
+    API->>Cost: get_llm_cost(response, model_name)
+    Cost-->>API: LLMCostResult (tokens + USD cost)
+    API-->>Client: {model, tokens, cost_usd}
+```
+
+### Quick Test
+
+```bash
+# Test Gemini Flash (analyzer/planner)
+curl -X POST http://localhost:8000/test-cost?agent=analyzer
+
+# Test Groq Llama (writer/reviewer)
+curl -X POST http://localhost:8000/test-cost?agent=writer
+```
+
+### Use in Code
+
+```python
+from backend.models.llm import get_llm_cost, create_llm, get_analyzer_llm_config
+
+config = get_analyzer_llm_config()
+llm = create_llm(config)
+response = await llm.ainvoke(messages)
+
+cost = get_llm_cost(response, config.model_name)
+print(f"Model: {cost.model}")
+print(f"Tokens: {cost.prompt_tokens} in / {cost.completion_tokens} out")
+print(f"Cost: ${cost.total_cost_usd}")
+```
+
+### Pricing Reference
+
+| Model | Input (per 1M tokens) | Output (per 1M tokens) |
+|-------|----------------------|------------------------|
+| `gemini/gemini-2.5-flash` | $0.15 | $0.60 |
+| `groq/llama-3.3-70b-versatile` | $0.59 | $0.79 |
 
 ---
 
@@ -643,6 +732,7 @@ If you see "Extension context invalidated" errors:
 - Llama 3.3 70B via Groq for writing & review
 - 10 comment tones
 - LangSmith observability
+- LLM cost tracking with `/test-cost` endpoint
 - Comment card with Copy/Insert/Dismiss
 - Insert into LinkedIn comment box with polling
 - Quality review system

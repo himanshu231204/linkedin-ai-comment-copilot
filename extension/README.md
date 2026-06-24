@@ -31,9 +31,10 @@ A Chrome Extension that generates AI-powered LinkedIn comments using the LangGra
 1. Start the backend server:
 ```bash
 cd ../backend
-$env:LLMGATEWAY_API_KEY="your_key_here"
 .\venv\Scripts\python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+Make sure `GOOGLE_API_KEY` and `GROQ_API_KEY` are set in `backend/.env`.
 
 ### Install Extension
 
@@ -96,7 +97,7 @@ The extension communicates with the FastAPI backend at `http://localhost:8000`:
 ### Generation fails
 - Verify the backend is running at `http://localhost:8000`
 - Check the console for error messages
-- Ensure `LLMGATEWAY_API_KEY` is set in the backend
+- Ensure `GOOGLE_API_KEY` and `GROQ_API_KEY` are set in the backend `.env`
 
 ### Comment not inserting
 - Click on the comment box first
