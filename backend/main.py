@@ -60,10 +60,10 @@ async def lifespan(app: FastAPI):
     # Startup
     configure_langsmith()
 
-    if not os.getenv("GOOGLE_API_KEY"):
-        print("WARNING: GOOGLE_API_KEY not set in environment")
     if not os.getenv("GROQ_API_KEY"):
-        print("WARNING: GROQ_API_KEY not set in environment")
+        print("WARNING: GROQ_API_KEY not set - comment generation will fail")
+    if not os.getenv("GOOGLE_API_KEY"):
+        print("INFO: GOOGLE_API_KEY not set - Gemini fallback disabled (optional)")
     yield
     # Shutdown (if needed)
 

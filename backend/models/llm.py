@@ -184,13 +184,13 @@ def create_llm(config: LLMConfig, callbacks: Optional[List[BaseCallbackHandler]]
 
 
 def get_analyzer_llm_config(source_domain: Optional[str] = None) -> LLMConfig:
-    """Get LLM configuration for Analyzer agent (Gemini 2.5 Flash)."""
-    api_key = os.getenv("GOOGLE_API_KEY")
+    """Get LLM configuration for Analyzer agent (Groq Llama 3.3 70B)."""
+    api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
-        raise ValueError("GOOGLE_API_KEY environment variable is required")
+        raise ValueError("GROQ_API_KEY environment variable is required")
 
     return LLMConfig(
-        model_name="gemini/gemini-2.5-flash",
+        model_name="groq/llama-3.3-70b-versatile",
         temperature=0.3,
         max_tokens=200,
         api_key=api_key,
@@ -199,13 +199,13 @@ def get_analyzer_llm_config(source_domain: Optional[str] = None) -> LLMConfig:
 
 
 def get_planner_llm_config(source_domain: Optional[str] = None) -> LLMConfig:
-    """Get LLM configuration for Planner agent (Gemini 2.5 Flash)."""
-    api_key = os.getenv("GOOGLE_API_KEY")
+    """Get LLM configuration for Planner agent (Groq Llama 3.3 70B)."""
+    api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
-        raise ValueError("GOOGLE_API_KEY environment variable is required")
+        raise ValueError("GROQ_API_KEY environment variable is required")
 
     return LLMConfig(
-        model_name="gemini/gemini-2.5-flash",
+        model_name="groq/llama-3.3-70b-versatile",
         temperature=0.5,
         max_tokens=200,
         api_key=api_key,
@@ -244,15 +244,36 @@ def get_reviewer_llm_config(source_domain: Optional[str] = None) -> LLMConfig:
 
 
 def get_default_llm_config(source_domain: Optional[str] = None) -> LLMConfig:
-    """Get default LLM configuration (Gemini 2.5 Flash)."""
+    """Get default LLM configuration (Groq Llama 3.3 70B)."""
     return get_analyzer_llm_config(source_domain=source_domain)
 
 
 def get_fallback_llm_config(source_domain: Optional[str] = None) -> LLMConfig:
-    """Get fallback LLM configuration (Groq Llama 3.3 70B) for when primary provider fails."""
-    return get_writer_llm_config(source_domain=source_domain)
+    """Get fallback LLM configuration (Gemini 2.5 Flash) for when Groq fails."""
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        # If no Gemini key, fall back to Groq (same provider, different model)
+        return get_writer_llm_config(source_domain=source_domain)
+
+    return LLMConfig(
+        model_name="gemini/gemini-2.5-flash",
+        temperature=0.7,
+        max_tokens=500,
+        api_key=api_key,
+        source_domain=source_domain,
+    )
 
 
 def get_premium_llm_config(source_domain: Optional[str] = None) -> LLMConfig:
-    """Get premium LLM configuration (Llama 3.3 70B Versatile via Groq)."""
-    return get_writer_llm_config(source_domain=source_domain)
+    """Get premium LLM configuration (Gemini 2.5 Flash) for high-quality output."""
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise ValueError("GOOGLE_API_KEY environment variable is required for premium config")
+
+    return LLMConfig(
+        model_name="gemini/gemini-2.5-flash",
+        temperature=0.7,
+        max_tokens=500,
+        api_key=api_key,
+        source_domain=source_domain,
+    )
