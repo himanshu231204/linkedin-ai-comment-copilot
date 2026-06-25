@@ -211,7 +211,7 @@ def _build_model_list(
     if fallback_api_key:
         model_list.append(
             {
-                "model_name": "primary",
+                "model_name": "fallback",
                 "litellm_params": {
                     "model": fallback_model,
                     "api_key": fallback_api_key,

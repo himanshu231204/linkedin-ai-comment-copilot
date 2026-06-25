@@ -7,6 +7,11 @@ if sys.platform == "win32":
     import asyncio
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
+# Disable litellm background network calls (telemetry, model cost fetching)
+# This prevents hanging on startup and in serverless environments
+os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
+os.environ.setdefault("DO_NOT_TRACK", "1")
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
