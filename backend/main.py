@@ -12,6 +12,11 @@ if sys.platform == "win32":
 os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 os.environ.setdefault("DO_NOT_TRACK", "1")
 
+# Suppress harmless Pydantic serialization warnings from LangChain
+# These occur when LangChain returns LLMResult objects with internal types
+import warnings
+warnings.filterwarnings("ignore", message=".*Pydantic serializer warnings.*")
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
