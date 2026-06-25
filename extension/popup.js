@@ -1,6 +1,6 @@
 // LinkedIn AI Comment Copilot - Popup Script
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = 'https://linkedin-ai-comment-copilot-1.onrender.com';
 const STORAGE_KEY = 'linkedin_ai_copilot_state';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
