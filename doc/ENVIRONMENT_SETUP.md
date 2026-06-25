@@ -12,6 +12,7 @@
 4. [Backend Setup](#backend-setup)
 5. [Extension Setup](#extension-setup)
 6. [Verification](#verification)
+7. [Render Deployment](#render-deployment)
 
 ---
 
@@ -32,53 +33,33 @@
 
 | Variable | Provider | Description | Get yours at |
 |----------|----------|-------------|-------------|
-| `GOOGLE_API_KEY` | Google AI | API key for Gemini 2.5 Flash (Analyzer + Planner) | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
-| `GROQ_API_KEY` | Groq | API key for Llama 3.3 70B (Writer + Reviewer) | [console.groq.com/keys](https://console.groq.com/keys) |
+| `GROQ_API_KEY` | Groq | API key for primary LLM (Llama 3.3 70B) | [console.groq.com/keys](https://console.groq.com/keys) |
 
 ### Optional Variables
 
 | Variable | Provider | Default | Description |
 |----------|----------|---------|-------------|
+| `GOOGLE_API_KEY` | Google AI | None | Fallback LLM (Gemini 2.5 Flash) — enables automatic failover |
 | `LANGSMITH_API_KEY` | LangSmith | None | Enables request tracing & observability |
 | `LANGSMITH_PROJECT` | LangSmith | `linkedin-ai-comment-copilot` | LangSmith project name |
 | `LANGSMITH_ENDPOINT` | LangSmith | `https://api.smith.langchain.com` | LangSmith API endpoint |
 | `HOST` | Server | `0.0.0.0` | Backend server bind host |
 | `PORT` | Server | `8000` | Backend server bind port |
 
+### LiteLLM Telemetry (set automatically)
+
+These are set in `backend/main.py` and `backend/test_models.py` — you do **not** need to add them to `.env`:
+
+| Variable | Value | Purpose |
+|----------|-------|---------|
+| `LITELLM_LOCAL_MODEL_COST_MAP` | `True` | Prevents LiteLLM from making background network calls that cause hangs |
+| `DO_NOT_TRACK` | `1` | Disables LiteLLM telemetry |
+
 ---
 
 ## API Key Setup
 
-### 1. Google AI API Key (Required)
-
-```mermaid
-graph LR
-    A["Go to<br/>aistudio.google.com"] --> B["Sign in with<br/>Google Account"]
-    B --> C["Click 'Get API Key'"]
-    C --> D["Create new key"]
-    D --> E["Copy key"]
-    E --> F["Add to .env<br/>GOOGLE_API_KEY=..."]
-
-    style A fill:#4285F4,color:#fff
-    style F fill:#057642,color:#fff
-```
-
-**Steps:**
-1. Visit [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
-2. Sign in with your Google account
-3. Click **"Create API Key"**
-4. Select or create a project
-5. Copy the generated key
-6. Add to `backend/.env`:
-   ```env
-   GOOGLE_API_KEY=AIzaSy...your_key_here
-   ```
-
-**Free tier**: 15 requests/minute, 1,500 requests/day
-
----
-
-### 2. Groq API Key (Required)
+### 1. Groq API Key (Required — Primary LLM)
 
 ```mermaid
 graph LR
@@ -104,6 +85,37 @@ graph LR
    ```
 
 **Free tier**: 30 requests/minute, 14,400 requests/day
+
+---
+
+### 2. Google AI API Key (Optional — Fallback LLM)
+
+```mermaid
+graph LR
+    A["Go to<br/>aistudio.google.com"] --> B["Sign in with<br/>Google Account"]
+    B --> C["Click 'Get API Key'"]
+    C --> D["Create new key"]
+    D --> E["Copy key"]
+    E --> F["Add to .env<br/>GOOGLE_API_KEY=..."]
+
+    style A fill:#4285F4,color:#fff
+    style F fill:#057642,color:#fff
+```
+
+**Steps:**
+1. Visit [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
+2. Sign in with your Google account
+3. Click **"Create API Key"**
+4. Select or create a project
+5. Copy the generated key
+6. Add to `backend/.env`:
+   ```env
+   GOOGLE_API_KEY=AIzaSy...your_key_here
+   ```
+
+**Why optional?** Without this key, the fallback model (Gemini) is unavailable. All requests go to Groq only. If Groq is down or rate-limited, requests will fail instead of falling back.
+
+**Free tier**: 20 requests/day (rate-limited)
 
 ---
 
@@ -180,15 +192,15 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 # LinkedIn AI Comment Copilot - .env
 # ===========================================
 
-# Required: Google AI (Analyzer + Planner)
-GOOGLE_API_KEY=AIzaSy...your_google_key
-
-# Required: Groq (Writer + Reviewer)
+# Required: Groq (Primary LLM — all agents)
 GROQ_API_KEY=gsk_...your_groq_key
 
+# Optional: Google AI (Fallback LLM — enables automatic failover)
+# GOOGLE_API_KEY=AIzaSy...your_google_key
+
 # Optional: LangSmith tracing
-LANGSMITH_API_KEY=ls_...your_langsmith_key
-LANGSMITH_PROJECT=linkedin-ai-comment-copilot
+# LANGSMITH_API_KEY=ls_...your_langsmith_key
+# LANGSMITH_PROJECT=linkedin-ai-comment-copilot
 # LANGSMITH_ENDPOINT=https://api.smith.langchain.com
 
 # Optional: Server config
@@ -251,12 +263,20 @@ Expected output:
 ============================================================
   LinkedIn AI Comment Copilot - Model Test
 ============================================================
-  [+] Analyzer  (Gemini 2.5 Flash): PASS
-  [+] Planner   (Gemini 2.5 Flash): PASS
-  [+] Writer    (Llama 3.3 70B - Groq): PASS
-  [+] Reviewer  (Llama 3.3 70B - Groq): PASS
+  [1/3] Testing Primary LLM (Groq Llama 3.3 70B)...
+    [+] Direct call: PASS (0.8s)
+    [+] Router call: PASS (0.7s)
+  [2/3] Testing Fallback LLM (Gemini 2.5 Flash)...
+    [+] Direct call: PASS (1.2s)  (or SKIP if no API key)
+  [3/3] Testing Router Fallback...
+    [+] Fallback trigger: PASS
+  [4/4] Testing Agent Integration...
+    [+] Analyzer: PASS
+    [+] Planner: PASS
+    [+] Writer: PASS
+    [+] Reviewer: PASS
 
-  Total: 4 passed, 0 failed
+  Total: 10 passed, 0 failed
 ============================================================
 ```
 
@@ -271,6 +291,39 @@ curl -X POST http://localhost:8000/generate-comment ^
 ### 4. LangSmith Verification
 
 If LangSmith is configured, visit [smith.langchain.com](https://smith.langchain.com) and select the `linkedin-ai-comment-copilot` project. You should see traces for each API call.
+
+---
+
+## Render Deployment
+
+The backend is deployed to Render as a Web Service.
+
+### Configuration
+
+- **render.yaml**: Defines the service configuration
+- **Procfile**: `web: uvicorn main:app --host 0.0.0.0 --port $PORT`
+- **Build command**: `pip install -r backend/requirements.txt`
+- **Start command**: Uses `$PORT` (Render injects this automatically)
+
+### Environment Variables on Render
+
+Set these in the Render dashboard under **Environment**:
+
+| Variable | Value |
+|----------|-------|
+| `GROQ_API_KEY` | `gsk_...your_key` |
+| `GOOGLE_API_KEY` | `AIzaSy...your_key` (optional) |
+| `LANGSMITH_API_KEY` | `ls_...your_key` (optional) |
+| `PYTHON_VERSION` | `3.11` |
+
+### Extension URL
+
+The Chrome extension connects to:
+```
+https://linkedin-ai-comment-copilot-1.onrender.com
+```
+
+This is set in both `extension/background.js` and `extension/popup.js` as `API_BASE_URL`.
 
 ---
 
@@ -302,9 +355,22 @@ LANGSMITH_PROJECT=linkedin-ai-comment-copilot
 ### API Returns 500 Error
 
 **Check:**
-1. API keys are set in `.env`
-2. Both Google AI and Groq APIs are accessible from your network
+1. `GROQ_API_KEY` is set in `.env` (required)
+2. Groq API is accessible from your network
 3. Run `python -m backend.test_models` to verify connectivity
+
+### LiteLLM Hangs
+
+**Symptom:** LLM calls hang indefinitely
+
+**Cause:** LiteLLM makes background network calls for telemetry and model cost lookup.
+
+**Fix:** These are already set in `main.py`, but if you're running tests separately:
+```bash
+set LITELLM_LOCAL_MODEL_COST_MAP=True
+set DO_NOT_TRACK=1
+python -m backend.test_models
+```
 
 ---
 

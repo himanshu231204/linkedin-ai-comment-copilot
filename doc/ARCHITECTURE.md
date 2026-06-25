@@ -30,30 +30,31 @@ graph LR
     subgraph "Server Side"
         API["FastAPI Backend<br/>Python 3.11+"]
         LG["LangGraph<br/>Multi-Agent Workflow"]
+        ROUTER["ChatLiteLLMRouter<br/>Automatic Fallback"]
     end
 
     subgraph "AI Providers"
-        GEM["Google AI<br/>Gemini 2.5 Flash"]
-        GROQ["Groq Cloud<br/>Llama 3.3 70B"]
+        GROQ["Groq Cloud<br/>Llama 3.3 70B (Primary)"]
+        GEM["Google AI<br/>Gemini 2.5 Flash (Fallback)"]
         LS["LangSmith<br/>Observability"]
     end
 
-    EXT <-->|"HTTP API<br/>(localhost:8000)"| API
+    EXT <-->|"HTTPS API<br/>(Render Cloud)"| API
     API --> LG
-    LG --> GEM
-    LG --> GROQ
+    LG --> ROUTER
+    ROUTER --> GROQ
+    ROUTER --> GEM
     LG --> LS
 
     style EXT fill:#FFC107,color:#000
     style API fill:#009688,color:#fff
     style LG fill:#FF6B35,color:#fff
-    style GEM fill:#4285F4,color:#fff
+    style ROUTER fill:#9C27B0,color:#fff
     style GROQ fill:#F55036,color:#fff
+    style GEM fill:#4285F4,color:#fff
     style LS fill:#6C47FF,color:#fff
 ```
-<div align="center">
-  <img src="../assets/System Overview.png" alt="System Overview" />
-</div>
+
 ---
 
 ## High-Level Architecture
@@ -65,7 +66,7 @@ graph TB
         BG["Background Service Worker<br/>(API orchestration)"]
     end
 
-    subgraph "FastAPI Backend"
+    subgraph "FastAPI Backend (Render)"
         ROUTE["API Routes<br/>/generate-comment<br/>/test-cost<br/>/health"]
         CORS["CORS Middleware"]
         LS["LangSmith Config"]
@@ -79,9 +80,16 @@ graph TB
         RV["Reviewer Node"]
     end
 
+    subgraph "ChatLiteLLMRouter (per agent)"
+        R1["Analyzer Router<br/>Primary: Groq<br/>Fallback: Gemini"]
+        R2["Planner Router<br/>Primary: Groq<br/>Fallback: Gemini"]
+        R3["Writer Router<br/>Primary: Groq<br/>Fallback: Gemini"]
+        R4["Reviewer Router<br/>Primary: Groq<br/>Fallback: Gemini"]
+    end
+
     subgraph "LLM Providers"
-        GEMINI["Google Gemini 2.5 Flash"]
         GROQLLAMA["Groq Llama 3.3 70B"]
+        GEMINI["Google Gemini 2.5 Flash"]
     end
 
     CTX -->|"chrome.runtime<br/>sendMessage"| BG
@@ -90,19 +98,24 @@ graph TB
     CORS --> GRAPH
     LS --> GRAPH
     GRAPH --> AN
-    AN --> PL
-    PL --> WR
-    WR --> RV
+    AN --> R1
+    R1 --> PL
+    PL --> R2
+    R2 --> WR
+    WR --> R3
+    R3 --> RV
     RV -->|"reject"| WR
     RV -->|"approve"| BG
-    AN --> GEMINI
-    PL --> GEMINI
-    WR --> GROQLLAMA
-    RV --> GROQLLAMA
+    R1 --> GROQLLAMA
+    R1 -.->|"fallback"| GEMINI
+    R2 --> GROQLLAMA
+    R2 -.->|"fallback"| GEMINI
+    R3 --> GROQLLAMA
+    R3 -.->|"fallback"| GEMINI
+    R4 --> GROQLLAMA
+    R4 -.->|"fallback"| GEMINI
 ```
-<div align="center">
-  <img src="../assets/High-Level Architecture.png" alt="High-Level Architecture" />
-</div>
+
 ---
 
 ## Component Diagram
@@ -131,33 +144,40 @@ classDiagram
         +should_regenerate()
     }
 
+    class ChatLiteLLMRouter {
+        +model_list: List[ModelConfig]
+        +fallbacks: List[Dict]
+        +num_retries: int
+        +timeout: int
+        +ainvoke(messages)
+    }
+
     class CostTracker {
         +get_llm_cost(response, model)
-        +LLMCallbackHandler
         +LLMCostResult
         +_resolve_pricing()
     }
 
     class AnalyzerAgent {
-        +Gemini 2.5 Flash
+        +create_analyzer_agent_with_router()
         +classify(post)
         +Output: post_type, category, sentiment
     }
 
     class PlannerAgent {
-        +Gemini 2.5 Flash
+        +create_planner_agent_with_router()
         +plan(type, category, tone)
         +Output: strategy
     }
 
     class WriterAgent {
-        +Llama 3.3 70B
+        +create_writer_agent_with_router()
         +write(content, tone, strategy)
         +Output: comment
     }
 
     class ReviewerAgent {
-        +Llama 3.3 70B
+        +create_reviewer_agent_with_router()
         +review(content, comment, tone)
         +Output: approved, score
     }
@@ -169,11 +189,12 @@ classDiagram
     LangGraph --> PlannerAgent
     LangGraph --> WriterAgent
     LangGraph --> ReviewerAgent
+    AnalyzerAgent --> ChatLiteLLMRouter
+    PlannerAgent --> ChatLiteLLMRouter
+    WriterAgent --> ChatLiteLLMRouter
+    ReviewerAgent --> ChatLiteLLMRouter
 ```
 
-<div align="center">
-  <img src="../assets/component_diagram.png" alt="component_diagram" />
-</div>
 ---
 
 ## Data Flow
@@ -184,12 +205,11 @@ classDiagram
 sequenceDiagram
     participant User as LinkedIn User
     participant Ext as Chrome Extension
-    participant API as FastAPI
+    participant API as FastAPI (Render)
     participant LG as LangGraph
-    participant A as Analyzer
-    participant P as Planner
-    participant W as Writer
-    participant R as Reviewer
+    participant R as ChatLiteLLMRouter
+    participant Groq as Groq (Primary)
+    participant Gemini as Gemini (Fallback)
 
     User->>Ext: Click "Generate AI Comment"
     Ext->>Ext: Extract post content
@@ -197,22 +217,50 @@ sequenceDiagram
 
     API->>LG: ainvoke(CommentState)
 
-    LG->>A: analyze_post(content, config)
-    A-->>LG: {post_type, category, sentiment}
+    LG->>R: Analyzer Router
+    R->>Groq: Try primary
+    Groq-->>R: classification
+    R-->>LG: {post_type, category, sentiment}
 
-    LG->>P: plan_strategy(type, category, tone, config)
-    P-->>LG: {strategy}
+    LG->>R: Planner Router
+    R->>Groq: Try primary
+    Groq-->>R: strategy
+    R-->>LG: {strategy}
 
-    LG->>W: write_comment(content, tone, strategy, config)
-    W-->>LG: generated_comment
+    LG->>R: Writer Router
+    R->>Groq: Try primary
+    Groq-->>R: comment
+    R-->>LG: generated_comment
 
-    LG->>R: review_comment(content, comment, tone, config)
+    LG->>R: Reviewer Router
+    R->>Groq: Try primary
+    Groq-->>R: score/approved
     R-->>LG: {approved: true, score: 92}
 
     LG-->>API: final_comment
     API-->>Ext: {comment: "..."}
     Ext-->>Ext: Store in chrome.storage + broadcast
     Ext-->>User: Show Comment Card<br/>(Copy/Insert/Dismiss)
+```
+
+### Fallback Scenario
+
+```mermaid
+sequenceDiagram
+    participant LG as LangGraph
+    participant R as ChatLiteLLMRouter
+    participant Groq as Groq (Primary)
+    participant Gemini as Gemini (Fallback)
+
+    LG->>R: Writer Router
+    R->>Groq: Try primary
+    Groq-->>R: 503 Service Unavailable
+    R->>R: Retry (1/2)
+    R->>Groq: Try primary again
+    Groq-->>R: 503 Service Unavailable
+    R->>Gemini: Fallback
+    Gemini-->>R: comment
+    R-->>LG: generated_comment (from Gemini)
 ```
 
 ### Data Transformations
@@ -228,8 +276,8 @@ graph LR
     E -->|"score < 80"| D
 
     style A fill:#E3F2FD
-    style B fill:#4285F4,color:#fff
-    style C fill:#4285F4,color:#fff
+    style B fill:#F55036,color:#fff
+    style C fill:#F55036,color:#fff
     style D fill:#F55036,color:#fff
     style E fill:#F55036,color:#fff
     style F fill:#057642,color:#fff
@@ -243,9 +291,9 @@ graph LR
 
 ```mermaid
 graph TD
-    MAIN["main.py<br/>FastAPI App"]
+    MAIN["main.py<br/>FastAPI App + LiteLLM env vars"]
     GRAPH["comment_graph.py<br/>LangGraph Workflow"]
-    LLM["llm.py<br/>LLM Configuration + Cost Tracking"]
+    LLM["llm.py<br/>LLM Config + Router + Cost Tracking"]
     ROUTER["model_router.py<br/>Model Utilities"]
 
     AN["analyzer.py"]
@@ -279,10 +327,7 @@ graph TD
     RV --> RP
     LLM --> ROUTER
 ```
-<div align="center">
-  <img src="../assets/Module Structure.png" alt="Module Structure" />
-</div>
----
+
 ### Error Handling Flow
 
 ```mermaid
@@ -301,9 +346,7 @@ graph TD
     style RES fill:#057642,color:#fff
     style HTTP fill:#F44336,color:#fff
 ```
-<div align="center">
-  <img src="../assets/Error Handling Flow.png" alt="Error Handling Flow" />
-</div>
+
 ---
 
 ## Chrome Extension Architecture
@@ -322,7 +365,7 @@ graph TD
         INPUT["Comment Box<br/>(auto-fill)"]
     end
 
-    subgraph "Backend API"
+    subgraph "Backend API (Render)"
         GEN["/generate-comment"]
         HEALTH["/health"]
     end
@@ -337,36 +380,45 @@ graph TD
     CTX -->|"showCommentNotification"| CARD
     CARD -->|"Insert Comment"| INPUT
 ```
-<div align="center">
-  <img src="../assets/Chrome Extension Architecture.png" alt="Chrome Extension Architecture" />
-</div>
+
 ---
 
 ## Network Topology
 
 ```mermaid
 graph TB
-    subgraph "Local Machine"
+    subgraph "User's Machine"
         BROWSER["Chrome Browser"]
         EXT["Extension<br/>(content + background)"]
-        SERVER["FastAPI Server<br/>(localhost:8000)"]
     end
 
-    subgraph "Cloud"
-        GOOGLE["Google AI<br/>generativelanguage.googleapis.com"]
-        GROQ_CLOUD["Groq Cloud<br/>api.groq.com"]
+    subgraph "Render Cloud"
+        SERVER["FastAPI Server<br/>linkedin-ai-comment-copilot-1.onrender.com"]
+    end
+
+    subgraph "Cloud Providers"
+        GROQ_CLOUD["Groq Cloud<br/>api.groq.com<br/>(Primary LLM)"]
+        GOOGLE["Google AI<br/>generativelanguage.googleapis.com<br/>(Fallback LLM)"]
         LS_CLOUD["LangSmith<br/>api.smith.langchain.com"]
     end
 
     BROWSER --> EXT
-    EXT <-->|"HTTP (local)"| SERVER
-    SERVER -->|"HTTPS"| GOOGLE
+    EXT <-->|"HTTPS (cloud)"| SERVER
     SERVER -->|"HTTPS"| GROQ_CLOUD
+    SERVER -->|"HTTPS"| GOOGLE
     SERVER -->|"HTTPS"| LS_CLOUD
 ```
-<div align="center">
-  <img src="../assets/Network Topology.png" alt="Network Topology" />
-</div>
+
+### Deployment Details
+
+| Component | Location | URL |
+|-----------|----------|-----|
+| Chrome Extension | User's browser | `chrome://extensions/` (loaded unpacked) |
+| FastAPI Backend | Render Web Service | `https://linkedin-ai-comment-copilot-1.onrender.com` |
+| Groq API | Cloud | `https://api.groq.com/openai/v1` |
+| Google AI API | Cloud | `https://generativelanguage.googleapis.com` |
+| LangSmith | Cloud | `https://api.smith.langchain.com` |
+
 ---
 
 ## Technology Stack
@@ -377,12 +429,14 @@ graph TB
 | **API** | FastAPI | 0.100+ | Async HTTP framework |
 | **Server** | Uvicorn | Latest | ASGI server |
 | **AI Framework** | LangGraph | Latest | Multi-agent orchestration |
-| **LLM SDK** | LangChain + LiteLLM | Latest | LLM abstraction |
+| **LLM SDK** | LangChain + LiteLLM | Latest | LLM abstraction + routing |
+| **LLM Router** | ChatLiteLLMRouter | Latest | Automatic model fallback |
 | **Validation** | Pydantic | 2.x | Data schemas |
 | **Observability** | LangSmith | Latest | Tracing & monitoring |
-| **LLM (Analysis)** | Gemini 2.5 Flash | - | Google AI models |
-| **LLM (Generation)** | Llama 3.3 70B | - | Meta open-source models |
+| **LLM (Primary)** | Llama 3.3 70B | - | Meta open-source models via Groq |
+| **LLM (Fallback)** | Gemini 2.5 Flash | - | Google AI models |
 | **Inference** | Groq Cloud | - | Ultra-fast LLM inference |
+| **Deployment** | Render | - | Cloud hosting |
 | **Extension** | Chrome MV3 | - | Browser extension standard |
 | **Frontend** | Vanilla JS | ES2022 | Content script + background worker |
 

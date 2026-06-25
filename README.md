@@ -15,7 +15,7 @@
 [![LangSmith](https://img.shields.io/badge/LangSmith-Tracking-blueviolet.svg)](https://smith.langchain.com/)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-yellow.svg)](https://developer.chrome.com/docs/extensions/mv3/)
 
-*Generate context-aware, human-like LinkedIn comments in real time using a LangGraph multi-agent workflow with Gemini and Llama 3.3.*
+*Generate context-aware, human-like LinkedIn comments in real time using a LangGraph multi-agent workflow with Groq Llama 3.3 and Gemini fallback.*
 
 [Features](#features) | [Architecture](#architecture) | [Quick Start](#quick-start) | [API Reference](#api-reference) | [Extension Setup](#extension-setup)
 
@@ -31,10 +31,11 @@ LinkedIn AI Comment Copilot is a full-stack application consisting of a **Chrome
 - No database required
 - No user authentication
 - No data storage — everything runs in real time
-- Per-agent model routing (Gemini for analysis, Llama 3.3 for writing/review)
+- ChatLiteLLMRouter for automatic model fallback (Groq primary, Gemini fallback)
 - LangSmith observability for full trace visibility
 - Multiple comment tones to match your style
 - Comment card with Copy, Insert, and Dismiss actions
+- One-click deploy to Render
 
 ---
 
@@ -59,7 +60,7 @@ LinkedIn AI Comment Copilot is a full-stack application consisting of a **Chrome
 | **Comment Card** | Displays generated comment in a prominent card with Copy, Insert, and Dismiss buttons |
 | **Insert to LinkedIn** | Automatically opens LinkedIn's comment box and fills it with the generated comment |
 | **Tone Selector** | Choose from 10 comment tones: Professional, Technical, Supportive, Networking, Thoughtful, Friendly, Encouraging, Curious, Founder, Recruiter |
-| **Per-Agent Model Routing** | Each agent uses the optimal LLM — Gemini 2.5 Flash for analysis, Llama 3.3 70B for writing & review |
+| **Per-Agent Model Routing** | Each agent uses the optimal LLM — Groq Llama 3.3 70B primary, Gemini 2.5 Flash fallback via ChatLiteLLMRouter |
 | **LangSmith Observability** | Full trace visibility for every request through the multi-agent pipeline |
 | **One-Click Copy** | Copy generated comments to clipboard instantly |
 | **Regenerate** | Generate alternative variations with a single click |
@@ -81,10 +82,10 @@ graph TD
     E -->|Configures| LS[LangSmith Tracing]
     E -->|Invokes| F[LangGraph Workflow]
     
-    F --> G["1. Analyzer Agent<br/><i>Gemini 2.5 Flash</i>"]
-    G -->|post_type, category, sentiment| H["2. Planner Agent<br/><i>Gemini 2.5 Flash</i>"]
-    H -->|strategy| I["3. Writer Agent<br/><i>Llama 3.3 70B via Groq</i>"]
-    I -->|generated_comment| J["4. Reviewer Agent<br/><i>Llama 3.3 70B via Groq</i>"]
+    F --> G["1. Analyzer Agent<br/><i>Groq Llama 3.3 70B</i><br/><small>Gemini fallback</small>"]
+    G -->|post_type, category, sentiment| H["2. Planner Agent<br/><i>Groq Llama 3.3 70B</i><br/><small>Gemini fallback</small>"]
+    H -->|strategy| I["3. Writer Agent<br/><i>Groq Llama 3.3 70B</i><br/><small>Gemini fallback</small>"]
+    I -->|generated_comment| J["4. Reviewer Agent<br/><i>Groq Llama 3.3 70B</i><br/><small>Gemini fallback</small>"]
     
     J -->|Approved| K[Return Comment]
     J -->|Rejected| I
@@ -96,8 +97,8 @@ graph TD
     
     style A fill:#0A66C2,color:#fff
     style F fill:#FF6B35,color:#fff
-    style G fill:#4285F4,color:#fff
-    style H fill:#4285F4,color:#fff
+    style G fill:#F55036,color:#fff
+    style H fill:#F55036,color:#fff
     style I fill:#F55036,color:#fff
     style J fill:#F55036,color:#fff
     style LS fill:#6C47FF,color:#fff
@@ -148,7 +149,7 @@ linkedin-ai-comment-copilot/
 │   ├── graph/
 │   │   └── comment_graph.py       # LangGraph workflow definition
 │   ├── models/
-│   │   ├── llm.py                 # LLM configs + cost tracking (Gemini + Groq)
+│   │   ├── llm.py                 # LLM configs + cost tracking + ChatLiteLLMRouter
 │   │   └── model_router.py        # Model selection utilities
 │   ├── prompts/
 │   │   ├── analyzer_prompt.py     # Analyzer system prompt
@@ -192,9 +193,9 @@ linkedin-ai-comment-copilot/
 |-----------|-----------|---------|
 | **Framework** | FastAPI | Async API server |
 | **AI Orchestration** | LangGraph | Multi-agent workflow |
-| **LLM Integration** | LangChain + LiteLLM | Prompt management & LLM calls |
-| **Analysis & Planning** | Gemini 2.5 Flash (Google) | Fast, accurate post classification & strategy |
-| **Writing & Review** | Llama 3.3 70B (Groq) | High-quality comment generation & quality review |
+| **LLM Integration** | LangChain + LiteLLM + ChatLiteLLMRouter | Prompt management, LLM calls & automatic fallback |
+| **Primary LLM** | Llama 3.3 70B (Groq) | Fast, reliable comment generation & analysis |
+| **Fallback LLM** | Gemini 2.5 Flash (Google AI) | Automatic fallback when Groq is unavailable |
 | **Observability** | LangSmith | Tracing, monitoring & debugging |
 | **Validation** | Pydantic | Request/response schemas |
 | **Server** | Uvicorn | ASGI server |
@@ -210,12 +211,14 @@ linkedin-ai-comment-copilot/
 
 ### LLM Models
 
-| Agent | Model | Provider | Temperature | Purpose |
-|-------|-------|----------|-------------|---------|
-| **Analyzer** | `gemini/gemini-2.5-flash` | Google AI | 0.3 | Post classification, sentiment analysis |
-| **Planner** | `gemini/gemini-2.5-flash` | Google AI | 0.5 | Comment strategy determination |
-| **Writer** | `groq/llama-3.3-70b-versatile` | Groq Cloud | 0.7 | Comment generation |
-| **Reviewer** | `groq/llama-3.3-70b-versatile` | Groq Cloud | 0.3 | Quality scoring & approval |
+All agents use **Groq Llama 3.3 70B** as primary with **Gemini 2.5 Flash** as automatic fallback via ChatLiteLLMRouter.
+
+| Agent | Primary Model | Fallback Model | Temperature | Purpose |
+|-------|--------------|----------------|-------------|---------|
+| **Analyzer** | `groq/llama-3.3-70b-versatile` | `gemini/gemini-2.5-flash` | 0.3 | Post classification, sentiment analysis |
+| **Planner** | `groq/llama-3.3-70b-versatile` | `gemini/gemini-2.5-flash` | 0.5 | Comment strategy determination |
+| **Writer** | `groq/llama-3.3-70b-versatile` | `gemini/gemini-2.5-flash` | 0.7 | Comment generation |
+| **Reviewer** | `groq/llama-3.3-70b-versatile` | `gemini/gemini-2.5-flash` | 0.3 | Quality scoring & approval |
 
 ---
 
@@ -225,8 +228,8 @@ linkedin-ai-comment-copilot/
 
 - Python 3.11 or higher
 - Google Chrome browser
-- [Google AI API key](https://aistudio.google.com/apikey) (free tier available)
-- [Groq API key](https://console.groq.com/keys) (free tier available)
+- [Groq API key](https://console.groq.com/keys) (free tier available) — **Required**
+- *(Optional)* [Google AI API key](https://aistudio.google.com/apikey) — Enables Gemini fallback
 - *(Optional)* [LangSmith API key](https://smith.langchain.com/settings) for tracing
 
 ### 1. Clone the Repository
@@ -265,11 +268,11 @@ cp .env.example .env
 Edit `backend/.env` with your API keys:
 
 ```env
-# Required — Google AI (Analyzer + Planner agents)
-GOOGLE_API_KEY=your_google_api_key_here
-
-# Required — Groq (Writer + Reviewer agents)
+# Required — Groq (all agents primary)
 GROQ_API_KEY=your_groq_api_key_here
+
+# Optional — Google AI (Gemini fallback when Groq fails)
+GOOGLE_API_KEY=your_google_api_key_here
 
 # Optional — LangSmith tracing
 LANGSMITH_API_KEY=your_langsmith_api_key_here
@@ -282,13 +285,19 @@ LANGSMITH_PROJECT=linkedin-ai-comment-copilot
 python -m backend.test_models
 ```
 
-You should see all 4 models pass:
+You should see all models pass:
 
 ```
-[+] Analyzer  (Gemini 2.5 Flash): PASS
-[+] Planner   (Gemini 2.5 Flash): PASS
-[+] Writer    (Llama 3.3 70B - Groq): PASS
-[+] Reviewer  (Llama 3.3 70B - Groq): PASS
+[+] Direct: Analyzer  (Groq Llama 3.3 70B): PASS
+[+] Direct: Planner   (Groq Llama 3.3 70B): PASS
+[+] Direct: Writer    (Groq Llama 3.3 70B): PASS
+[+] Direct: Reviewer  (Groq Llama 3.3 70B): PASS
+[+] Router: Groq to Gemini: PASS
+[+] Router Fallback: PASS
+[+] Agent: Analyzer: PASS
+[+] Agent: Planner: PASS
+[+] Agent: Writer: PASS
+[+] Agent: Reviewer: PASS
 ```
 
 ### 5. Start the Backend Server
@@ -496,11 +505,11 @@ When the button is clicked:
 
 1. **Content Script** sends `GENERATE_COMMENT` message to Background Worker
 2. **Background Worker** calls the FastAPI API
-3. **LangGraph Pipeline** executes 4 agents sequentially:
-   - **Analyzer** (Gemini 2.5 Flash): Classifies post type, category, sentiment
-   - **Planner** (Gemini 2.5 Flash): Determines comment strategy
-   - **Writer** (Llama 3.3 70B): Generates the comment
-   - **Reviewer** (Llama 3.3 70B): Scores and approves/rejects
+3. **LangGraph Pipeline** executes 4 agents sequentially (each with automatic Groq→Gemini fallback via ChatLiteLLMRouter):
+   - **Analyzer** (Groq Llama 3.3 70B): Classifies post type, category, sentiment
+   - **Planner** (Groq Llama 3.3 70B): Determines comment strategy
+   - **Writer** (Groq Llama 3.3 70B): Generates the comment
+   - **Reviewer** (Groq Llama 3.3 70B): Scores and approves/rejects
 4. **Background Worker** persists the comment and broadcasts to Content Script
 5. **Content Script** displays the comment in a card
 
@@ -548,19 +557,19 @@ sequenceDiagram
     Client->>API: POST /generate-comment
     API->>Graph: ainvoke(state)
     Graph->>A: analyze_post()
-    A->>A: Gemini 2.5 Flash
+    A->>A: Groq Llama 3.3 70B (or Gemini fallback)
     A-->>LS: Trace: Analyzer
     A-->>Graph: post_type, category, sentiment
     Graph->>P: plan_strategy()
-    P->>P: Gemini 2.5 Flash
+    P->>P: Groq Llama 3.3 70B (or Gemini fallback)
     P-->>LS: Trace: Planner
     P-->>Graph: strategy
     Graph->>W: write_comment()
-    W->>W: Llama 3.3 70B
+    W->>W: Groq Llama 3.3 70B (or Gemini fallback)
     W-->>LS: Trace: Writer
     W-->>Graph: generated_comment
     Graph->>R: review_comment()
-    R->>R: Llama 3.3 70B
+    R->>R: Groq Llama 3.3 70B (or Gemini fallback)
     R-->>LS: Trace: Reviewer
     R-->>Graph: approved/score
     Graph-->>API: final_comment
@@ -581,8 +590,8 @@ View traces at: https://smith.langchain.com
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `GOOGLE_API_KEY` | Yes | Google AI API key (Gemini models) |
-| `GROQ_API_KEY` | Yes | Groq API key (Llama 3.3 models) |
+| `GROQ_API_KEY` | Yes | Groq API key (primary LLM for all agents) |
+| `GOOGLE_API_KEY` | No | Google AI API key (Gemini fallback when Groq fails) |
 | `LANGSMITH_API_KEY` | No | LangSmith API key for tracing |
 | `LANGSMITH_PROJECT` | No | LangSmith project name (default: `linkedin-ai-comment-copilot`) |
 | `HOST` | No | Server host (default: `0.0.0.0`) |
@@ -590,10 +599,7 @@ View traces at: https://smith.langchain.com
 
 ### CORS Configuration
 
-The backend is pre-configured to accept requests from:
-- Chrome Extension (`chrome-extension://*`)
-- Local development (`http://localhost:*`)
-- LinkedIn domains (`https://*.linkedin.com`)
+The backend is pre-configured to accept requests from all origins (Chrome Extension, localhost, LinkedIn). For production, you may want to restrict `allow_origins` in `main.py`.
 
 ---
 
