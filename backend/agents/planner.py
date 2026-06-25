@@ -1,19 +1,20 @@
 from typing import Dict, Any
+import os
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.runnables import Runnable
 
 try:
     from ..prompts.planner_prompt import planner_prompt
-    from ..models.llm import create_llm, get_default_llm_config, get_fallback_llm_config
+    from ..models.llm import create_llm, create_llm_with_router, get_planner_llm_config, get_fallback_llm_config
 except ImportError:
     from prompts.planner_prompt import planner_prompt
-    from models.llm import create_llm, get_default_llm_config, get_fallback_llm_config
+    from models.llm import create_llm, create_llm_with_router, get_planner_llm_config, get_fallback_llm_config
 
 
 def create_planner_agent(llm_config=None) -> Runnable:
     """Create the comment strategy planner agent."""
     if llm_config is None:
-        llm_config = get_default_llm_config()
+        llm_config = get_planner_llm_config()
 
     llm = create_llm(llm_config)
     parser = JsonOutputParser()
@@ -21,28 +22,36 @@ def create_planner_agent(llm_config=None) -> Runnable:
     return planner_prompt | llm | parser
 
 
+def create_planner_agent_with_router() -> Runnable:
+    """Create the planner agent with automatic fallback via Router.
+
+    Uses Groq as primary, Gemini as fallback.
+    """
+    groq_key = os.getenv("GROQ_API_KEY")
+    google_key = os.getenv("GOOGLE_API_KEY")
+
+    if not groq_key:
+        raise ValueError("GROQ_API_KEY environment variable is required")
+
+    llm = create_llm_with_router(
+        primary_model="groq/llama-3.3-70b-versatile",
+        primary_api_key=groq_key,
+        fallback_model="gemini/gemini-2.5-flash",
+        fallback_api_key=google_key,
+        temperature=0.5,
+        max_tokens=200,
+    )
+    parser = JsonOutputParser()
+
+    return planner_prompt | llm | parser
+
+
 async def plan_strategy(post_type: str, category: str, tone: str, llm_config=None) -> Dict[str, Any]:
-    """Plan the comment strategy based on post type and tone with fallback to Groq."""
-    try:
-        agent = create_planner_agent(llm_config)
-        result = await agent.ainvoke({
-            "post_type": post_type,
-            "category": category,
-            "tone": tone,
-        })
-        return result
-    except Exception as primary_error:
-        print(f"Primary LLM failed (Gemini): {primary_error}")
-        print("Falling back to Groq...")
-        try:
-            fallback_config = get_fallback_llm_config()
-            agent = create_planner_agent(fallback_config)
-            result = await agent.ainvoke({
-                "post_type": post_type,
-                "category": category,
-                "tone": tone,
-            })
-            return result
-        except Exception as fallback_error:
-            print(f"Fallback LLM also failed (Groq): {fallback_error}")
-            raise fallback_error
+    """Plan the comment strategy based on post type and tone with automatic fallback."""
+    agent = create_planner_agent_with_router()
+    result = await agent.ainvoke({
+        "post_type": post_type,
+        "category": category,
+        "tone": tone,
+    })
+    return result

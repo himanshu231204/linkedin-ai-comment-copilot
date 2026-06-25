@@ -158,7 +158,6 @@ async def generate_comment(request: GenerateCommentRequest) -> GenerateCommentRe
             "review_score": 0,
             "approved": False,
             "final_comment": "",
-            "llm_config": {},
         }
 
         result = await comment_graph.ainvoke(initial_state)

@@ -3,7 +3,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field
-from langchain_litellm import ChatLiteLLM
+from langchain_litellm import ChatLiteLLM, ChatLiteLLMRouter
+from litellm import Router
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import BaseMessage
 from langchain_core.outputs import LLMResult
@@ -181,6 +182,107 @@ def create_llm(config: LLMConfig, callbacks: Optional[List[BaseCallbackHandler]]
         kwargs["callbacks"] = callbacks
 
     return ChatLiteLLM(**kwargs)
+
+
+# ─── Router-based LLM Creation ───────────────────────────────────────────────
+
+def _build_model_list(
+    primary_model: str,
+    primary_api_key: str,
+    fallback_model: str,
+    fallback_api_key: Optional[str] = None,
+    temperature: float = 0.7,
+    max_tokens: int = 500,
+) -> List[Dict[str, Any]]:
+    """Build a model list for the LiteLLM Router with automatic fallback."""
+    model_list = [
+        {
+            "model_name": "primary",
+            "litellm_params": {
+                "model": primary_model,
+                "api_key": primary_api_key,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            },
+        },
+    ]
+
+    # Add fallback model if API key is available
+    if fallback_api_key:
+        model_list.append(
+            {
+                "model_name": "primary",
+                "litellm_params": {
+                    "model": fallback_model,
+                    "api_key": fallback_api_key,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                },
+            }
+        )
+
+    return model_list
+
+
+def create_llm_with_router(
+    primary_model: str,
+    primary_api_key: str,
+    fallback_model: str,
+    fallback_api_key: Optional[str] = None,
+    temperature: float = 0.7,
+    max_tokens: int = 500,
+    callbacks: Optional[List[BaseCallbackHandler]] = None,
+) -> ChatLiteLLMRouter:
+    """Create a ChatLiteLLMRouter with automatic fallback between providers.
+
+    The router tries the primary model first. If it fails (503, 429, timeout),
+    it automatically retries with the fallback model.
+
+    Args:
+        primary_model: Primary model identifier (e.g., "groq/llama-3.3-70b-versatile")
+        primary_api_key: API key for the primary provider
+        fallback_model: Fallback model identifier (e.g., "gemini/gemini-2.5-flash")
+        fallback_api_key: API key for the fallback provider (optional)
+        temperature: Sampling temperature
+        max_tokens: Maximum tokens in response
+        callbacks: Optional list of LangChain callbacks
+
+    Returns:
+        ChatLiteLLMRouter instance with automatic fallback
+    """
+    model_list = _build_model_list(
+        primary_model=primary_model,
+        primary_api_key=primary_api_key,
+        fallback_model=fallback_model,
+        fallback_api_key=fallback_api_key,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+
+    # Configure fallbacks: if primary fails, try fallback
+    fallbacks = []
+    if fallback_api_key:
+        fallbacks = [{"primary": ["fallback"]}]
+
+    router = Router(
+        model_list=model_list,
+        fallbacks=fallbacks,
+        num_retries=2,
+        retry_after=0.5,
+        timeout=30,
+    )
+
+    kwargs = {
+        "router": router,
+        "model_name": "primary",
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+
+    if callbacks:
+        kwargs["callbacks"] = callbacks
+
+    return ChatLiteLLMRouter(**kwargs)
 
 
 def get_analyzer_llm_config(source_domain: Optional[str] = None) -> LLMConfig:

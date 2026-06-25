@@ -6,23 +6,11 @@ try:
     from ..agents.planner import plan_strategy
     from ..agents.writer import write_comment
     from ..agents.reviewer import review_comment
-    from ..models.llm import (
-        get_analyzer_llm_config,
-        get_planner_llm_config,
-        get_writer_llm_config,
-        get_reviewer_llm_config,
-    )
 except ImportError:
     from agents.analyzer import analyze_post
     from agents.planner import plan_strategy
     from agents.writer import write_comment
     from agents.reviewer import review_comment
-    from models.llm import (
-        get_analyzer_llm_config,
-        get_planner_llm_config,
-        get_writer_llm_config,
-        get_reviewer_llm_config,
-    )
 
 
 class CommentState(TypedDict):
@@ -36,65 +24,54 @@ class CommentState(TypedDict):
     review_score: int
     approved: bool
     final_comment: str
-    llm_config: dict
 
 
 async def analyzer_node(state: CommentState) -> CommentState:
-    """Analyze the LinkedIn post (Gemini 2.5 Flash)."""
-    llm_config = get_analyzer_llm_config()
-    result = await analyze_post(state["post_content"], llm_config)
+    """Analyze the LinkedIn post (Groq primary, Gemini fallback via Router)."""
+    result = await analyze_post(state["post_content"])
 
     return {
         **state,
         "post_type": result.get("post_type", "unknown"),
         "category": result.get("category", "general"),
         "sentiment": result.get("sentiment", "neutral"),
-        "llm_config": llm_config.model_dump(),
     }
 
 
 async def planner_node(state: CommentState) -> CommentState:
-    """Plan the comment strategy (Gemini 2.5 Flash)."""
-    llm_config = get_planner_llm_config()
+    """Plan the comment strategy (Groq primary, Gemini fallback via Router)."""
     result = await plan_strategy(
         state["post_type"],
         state["category"],
         state["tone"],
-        llm_config,
     )
 
     return {
         **state,
         "strategy": result.get("strategy", "write a relevant comment"),
-        "llm_config": llm_config.model_dump(),
     }
 
 
 async def writer_node(state: CommentState) -> CommentState:
-    """Write the comment (Llama 3.3 70B Versatile via Groq)."""
-    llm_config = get_writer_llm_config()
+    """Write the comment (Groq primary, Gemini fallback via Router)."""
     comment = await write_comment(
         state["post_content"],
         state["tone"],
         state["strategy"],
-        llm_config,
     )
 
     return {
         **state,
         "generated_comment": comment,
-        "llm_config": llm_config.model_dump(),
     }
 
 
 async def reviewer_node(state: CommentState) -> CommentState:
-    """Review the generated comment (Llama 3.3 70B Versatile via Groq)."""
-    llm_config = get_reviewer_llm_config()
+    """Review the generated comment (Groq primary, Gemini fallback via Router)."""
     result = await review_comment(
         state["post_content"],
         state["generated_comment"],
         state["tone"],
-        llm_config,
     )
 
     approved = result.get("approved", False)
@@ -105,7 +82,6 @@ async def reviewer_node(state: CommentState) -> CommentState:
         "review_score": score,
         "approved": approved,
         "final_comment": state["generated_comment"] if approved else "",
-        "llm_config": llm_config.model_dump(),
     }
 
 
